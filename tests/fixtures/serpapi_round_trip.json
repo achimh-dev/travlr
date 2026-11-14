@@ -1,0 +1,39 @@
+{
+  "search_metadata": {"status": "Success", "google_flights_url": "https://www.google.com/travel/flights?hl=de&gl=de&curr=EUR&tfs=EXAMPLE"},
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"name": "Flughafen Frankfurt", "id": "FRA", "time": "2027-03-24 07:05"},
+          "arrival_airport": {"name": "Humberto Delgado", "id": "LIS", "time": "2027-03-24 09:20"},
+          "duration": 195, "airplane": "Airbus A320", "airline": "TAP Air Portugal", "travel_class": "Economy",
+          "flight_number": "TP 573", "legroom": "71 cm", "extensions": ["Durchschnittliche Beinfreiheit (71 cm)", "WLAN gegen Gebühr", "CO2-Emissionen: 113 kg"]
+        }
+      ],
+      "total_duration": 195,
+      "carbon_emissions": {"this_flight": 226000, "typical_for_this_route": 230000, "difference_percent": -2},
+      "price": 238, "type": "Round trip", "departure_token": "abc"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {"name": "Frankfurt-Hahn", "id": "HHN", "time": "2027-03-24 06:10"},
+          "arrival_airport": {"name": "Barajas", "id": "MAD", "time": "2027-03-24 08:45"},
+          "duration": 155, "airline": "Ryanair", "flight_number": "FR 1234",
+          "extensions": ["Großes Handgepäck nicht inklusive", "Häufig mehr als 30 Min. verspätet"]
+        },
+        {
+          "departure_airport": {"name": "Barajas", "id": "MAD", "time": "2027-03-24 10:05"},
+          "arrival_airport": {"name": "Humberto Delgado", "id": "LIS", "time": "2027-03-24 10:20"},
+          "duration": 75, "airline": "Ryanair", "flight_number": "FR 5678", "extensions": []
+        }
+      ],
+      "layovers": [{"duration": 80, "name": "Barajas", "id": "MAD"}],
+      "total_duration": 310,
+      "price": 142, "type": "Round trip"
+    }
+  ],
+  "price_insights": {"lowest_price": 142, "price_level": "low", "typical_price_range": [180, 320]}
+}

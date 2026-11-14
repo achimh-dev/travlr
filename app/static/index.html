@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRAVLR</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="TRAVLR">
+  <meta name="theme-color" content="#151515">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1><img src="/static/icon.svg" alt="" width="24" height="24"> TRAVLR</h1>
+      <span id="mode" class="badge" hidden></span>
+      <span id="sources" class="sources"></span>
+      <form id="logout" method="post" action="/logout" hidden><button class="link" type="submit">Abmelden</button></form>
+    </div>
+    <nav class="wrap tabs">
+      <a href="#suche" data-tab="suche">Suche</a>
+      <a href="#alarme" data-tab="alarme">Preisalarme</a>
+      <a href="#community" data-tab="community">Community</a>
+      <a href="#profil" data-tab="profil">Profil</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+  <div id="tab-suche" class="tab">
+    <form id="form" class="card">
+      <label for="request">Wohin willst du?</label>
+      <textarea id="request" rows="3" required
+        placeholder="z. B. Ende März eine Woche nach Lissabon. Oder: Im Mai 2 Wochen Japan, gern Business mit Meilen."></textarea>
+
+      <fieldset class="prio">
+        <legend>Was ist dir am wichtigsten?</legend>
+        <label><input type="radio" name="priority" value="price" checked> Nur der Preis</label>
+        <label><input type="radio" name="priority" value="balanced"> Preis-Leistung</label>
+        <label><input type="radio" name="priority" value="comfort"> Komfort</label>
+      </fieldset>
+
+      <details id="factors" class="panel">
+        <summary>Faktoren &amp; Strategien</summary>
+        <div class="grid">
+          <div class="field"><label for="adults">Reisende (Erw.)</label><input id="adults" type="number" min="1" max="9" value="1"></div>
+          <div class="field"><label for="cabin">Kabine</label>
+            <select id="cabin"><option value="economy">Economy</option><option value="premium_economy">Premium Economy</option><option value="business">Business</option><option value="first">First</option></select></div>
+          <div class="field"><label for="flex_days">Flexibilität ± Tage</label><input id="flex_days" type="number" min="0" max="7" value="2"></div>
+          <div class="field"><label for="carry_on_bags">Großes Handgepäck</label><input id="carry_on_bags" type="number" min="0" max="2" value="0"></div>
+          <div class="field"><label for="checked_bags">Aufgabegepäck</label><input id="checked_bags" type="number" min="0" max="3" value="0"></div>
+          <div class="field"><label for="max_stops">Max. Umstiege</label>
+            <select id="max_stops"><option value="">egal</option><option value="0">0 (nonstop)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option></select></div>
+          <div class="field"><label for="max_duration_h">Max. Reisezeit (h)</label><input id="max_duration_h" type="number" min="1" max="72" placeholder="egal"></div>
+          <div class="field"><label for="min_layover_min">Umstieg mind. (min)</label><input id="min_layover_min" type="number" min="0" max="600" value="45"></div>
+          <div class="field"><label for="max_layover_h">Umstieg max. (h)</label><input id="max_layover_h" type="number" min="1" max="48" placeholder="egal"></div>
+          <div class="field"><label for="max_ground_travel_h">Anreise diesmal max. (h)</label><input id="max_ground_travel_h" type="number" min="0" max="12" step="0.5" placeholder="laut Profil"></div>
+          <div class="field wide"><label for="avoid_airlines">Airlines ausschließen</label><input id="avoid_airlines" placeholder="z. B. Ryanair, Wizz Air"></div>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="allow_overnight_layover" checked> Übernachtung beim Umstieg ok</label>
+          <label><input type="checkbox" id="allow_separate_tickets" checked> Getrennte Tickets / Self-Transfer ok</label>
+          <label><input type="checkbox" id="allow_positioning" checked> Abflug von anderem Ort (Positionierung) ok</label>
+          <label><input type="checkbox" id="consider_miles" checked> Meilen &amp; Punkte berücksichtigen</label>
+          <label><input type="checkbox" id="try_other_markets"> Andere Länder-Märkte testen (Experiment)</label>
+        </div>
+        <label for="notes">Sonstige Wünsche</label>
+        <input id="notes" placeholder="z. B. Ankunft nicht nach 23 Uhr, gern Stopover in Istanbul">
+      </details>
+
+
+      <div class="row">
+        <div class="field small"><label for="budget">Max. Suchen</label><input id="budget" type="number" min="1" max="30"></div>
+        <button id="go" type="submit">Günstigste Flüge finden</button>
+      </div>
+    </form>
+
+    <section id="progress" class="card" hidden>
+      <h2>Fortschritt</h2>
+      <ol id="log"></ol>
+    </section>
+
+    <section id="error" class="card error" hidden></section>
+
+    <section id="results" hidden>
+      <div id="summary" class="card summary"></div>
+      <h2>Empfehlungen</h2>
+      <div id="picks" class="picks"></div>
+      <h2>Alle gefundenen Flüge <small id="count"></small></h2>
+      <div class="table-wrap card">
+        <table id="all">
+          <thead><tr><th>Preis</th><th>inkl. Anreise</th><th>Quelle</th><th>Airline</th><th>Route</th><th>Abflug</th><th>Ankunft</th><th>Dauer</th><th>Stopps</th><th>Typ</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div id="awards_block" hidden>
+        <h2>Prämienflüge <small id="award_count"></small></h2>
+        <div class="table-wrap card">
+          <table id="awards">
+            <thead><tr><th>Meilen</th><th>+ Steuern</th><th>Programm</th><th>Strecke</th><th>Datum</th><th>Airlines</th><th>Direkt</th><th>Plätze</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <h2>Durchgeführte Suchen</h2>
+      <ul id="searches" class="card searches"></ul>
+      <p class="fine">Preise sind eine Momentaufnahme und können sich bis zur Buchung ändern. Prämienverfügbarkeit vor einem Meilentransfer immer im jeweiligen Programm prüfen: Transfers sind endgültig.</p>
+    </section>
+  </div>
+
+  <div id="tab-alarme" class="tab" hidden>
+    <section class="card">
+      <h2>Preisalarme &amp; Deal-Radar</h2>
+      <p class="fine">Route-Alarm: Eine Strecke wird regelmäßig zu wechselnden Daten im Zeitfenster geprüft. Deal-Radar: Wohin komme ich ab meinem Umkreis unter X €? Prüfungen laufen ohne KI und verbrauchen nur Flugsuchen. <span id="ntfy_state"></span></p>
+      <div id="watches"></div>
+      <div class="row"><button type="button" id="new_route" class="secondary">+ Route-Alarm</button><button type="button" id="new_radar" class="secondary">+ Deal-Radar</button><button type="button" id="test_push" class="secondary">Test-Push senden</button></div>
+    </section>
+    <form id="watch_form" class="card" hidden>
+      <h2 id="watch_form_title">Alarm</h2>
+      <input type="hidden" id="w_id"><input type="hidden" id="w_kind">
+      <div class="grid">
+        <div class="field wide"><label for="w_name">Name</label><input id="w_name" required placeholder="z. B. New York günstig"></div>
+        <div class="field"><label for="w_origins">Abflug (leer = Umkreis)</label><input id="w_origins" placeholder="DTM,DUS,CGN"></div>
+        <div class="field"><label for="w_destinations" id="w_dest_label">Ziel-Flughäfen</label><input id="w_destinations" placeholder="JFK,EWR"></div>
+        <div class="field"><label for="w_max_price">Alarm unter (€ inkl. Anreise/Parken)</label><input id="w_max_price" type="number" min="1" required></div>
+        <div class="field"><label for="w_adults">Reisende</label><input id="w_adults" type="number" min="1" max="9" value="1"></div>
+        <div class="field"><label for="w_date_from">Hinflug frühestens</label><input id="w_date_from" type="date"></div>
+        <div class="field"><label for="w_date_to">Hinflug spätestens</label><input id="w_date_to" type="date"></div>
+        <div class="field"><label for="w_nights_min">Nächte min.</label><input id="w_nights_min" type="number" min="0" max="60" value="5"></div>
+        <div class="field"><label for="w_nights_max">Nächte max.</label><input id="w_nights_max" type="number" min="0" max="60" value="9"></div>
+        <div class="field"><label for="w_cabin">Kabine</label><select id="w_cabin"><option value="economy">Economy</option><option value="premium_economy">Premium Economy</option><option value="business">Business</option><option value="first">First</option></select></div>
+        <div class="field"><label for="w_stops">Umstiege</label><select id="w_stops"><option value="any">egal</option><option value="nonstop">nonstop</option><option value="max1">max. 1</option><option value="max2">max. 2</option></select></div>
+        <div class="field"><label for="w_samples">Daten pro Prüfung</label><input id="w_samples" type="number" min="1" max="10" value="2"></div>
+        <div class="field"><label for="w_interval">Prüfen alle (h)</label><input id="w_interval" type="number" min="1" max="168" value="24"></div>
+      </div>
+      <label class="inline"><input type="checkbox" id="w_active" checked> aktiv</label>
+      <p class="fine" id="w_usage"></p>
+      <div class="row"><button type="submit">Speichern</button><button type="button" id="w_cancel" class="secondary">Abbrechen</button></div>
+    </form>
+  </div>
+
+  <div id="tab-community" class="tab" hidden>
+    <section class="card">
+      <h2>Community-Digest</h2>
+      <p class="fine">Einmal pro Woche liest TRAVLR die öffentlichen RSS-Feeds der Deal-Seiten und Foren und fasst passende Deals und neue Tricks zusammen. Tipps, die du übernimmst, kennt der Such-Agent ab dann als Hintergrundwissen. <span id="digest_last"></span></p>
+      <div class="row"><button type="button" id="run_digest" class="secondary">Jetzt auswerten</button></div>
+      <div id="digests"></div>
+    </section>
+    <section class="card">
+      <h2>Übernommene Tipps</h2>
+      <ul id="tips" class="searches"></ul>
+    </section>
+    <section class="card">
+      <h2>Feeds</h2>
+      <table class="accounts"><thead><tr><th>aktiv</th><th>Name</th><th>RSS-Adresse</th><th></th></tr></thead><tbody id="feeds"></tbody></table>
+      <div class="row"><button type="button" id="add_feed" class="secondary">+ Feed</button><button type="button" id="save_feeds" class="secondary">Feeds speichern</button><span id="feeds_msg" class="fine"></span></div>
+    </section>
+  </div>
+
+  <div id="tab-profil" class="tab" hidden>
+      <section id="profile" class="card">
+        <h2>Mein Profil</h2>
+        <div class="grid">
+          <div class="field"><label for="home_location">Wohnort (Umkreis-Start)</label><input id="home_location" placeholder="z. B. Köln"></div>
+          <div class="field"><label for="home_airports">Heimatflughafen(s) ohne Wohnort</label><input id="home_airports" placeholder="FRA"></div>
+          <div class="field"><label for="car_cost_per_km">Fahrtkosten Auto (€/km)</label><input id="car_cost_per_km" type="number" min="0" max="2" step="0.05"></div>
+          <div class="field"><label for="card">Zahlungskarte</label><input id="card"></div>
+          <div class="field"><label for="card_fx_fee_pct">Auslandsentgelt (%)</label><input id="card_fx_fee_pct" type="number" min="0" max="5" step="0.1"></div>
+          <div class="field"><label for="min_value">Meilen lohnen ab (ct/Meile)</label><input id="min_value" type="number" min="0" max="10" step="0.1"></div>
+        </div>
+        <h3>Flughäfen im Umkreis</h3>
+        <div class="grid"><div class="field"><label for="max_drive_h">Vorauswahl bis (h Fahrt)</label><input id="max_drive_h" type="number" min="0" max="4" step="0.25"></div></div>
+        <p id="nearby" class="fine"></p>
+        <div id="airport_list" class="airport-list"></div>
+        <h3>Anreise &amp; Parken je Flughafen</h3>
+        <p class="fine">Schätzwerte für vorab online gebuchtes Parken (vor Ort oft ein Vielfaches). Eigene Preise eintragen, wenn du sie kennst; leere Felder nutzen die Schätzung.</p>
+        <div class="table-wrap"><table class="accounts access"><thead><tr><th>Flughafen</th><th>Anreise</th><th>Taxi hin+zurück €</th><th>Parken 1 / 3 / 7 / 14 Tage €</th></tr></thead><tbody id="access_rows"></tbody></table></div>
+        <h3>Meilen &amp; Punkte</h3>
+        <table class="accounts"><thead><tr><th>Programm</th><th>Stand</th><th>Status</th></tr></thead><tbody id="accounts"></tbody></table>
+        <p class="fine" id="transfers"></p>
+        <label for="profile_notes">Notizen für den Agenten</label>
+        <input id="profile_notes" placeholder="z. B. Lounge-Zugang über Amex Platinum vorhanden">
+        <div class="row center"><button type="button" id="save_profile" class="secondary">Profil speichern</button><span id="profile_msg" class="fine"></span></div>
+      </section>
+  </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

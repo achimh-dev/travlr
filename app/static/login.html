@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TRAVLR · Anmelden</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="login-body">
+  <form class="card login" method="post" action="/login">
+    <img src="/static/icon.svg" alt="" width="56" height="56">
+    <h1>TRAVLR</h1>
+    <!--ERROR-->
+    <label for="username">Benutzername</label>
+    <input id="username" name="username" autocomplete="username" autocapitalize="none" required>
+    <label for="password">Passwort</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit">Anmelden</button>
+  </form>
+</body>
+</html>

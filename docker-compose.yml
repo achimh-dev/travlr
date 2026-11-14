@@ -1,0 +1,29 @@
+# Für Synology Container Manager → Projekt → "docker-compose.yml hochladen"
+# oder lokal: docker compose up -d --build
+services:
+  travlr:
+    build: .
+    container_name: travlr
+    restart: unless-stopped
+    env_file: .env
+    # Läuft als PUID:PGID aus .env (Standard 1000:1000), damit er in ./data schreiben darf.
+    # Synology: per SSH `id` ausführen, oft 1026:100.
+    user: "${PUID:-1000}:${PGID:-1000}"
+    environment:
+      DATA_DIR: /data
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data
+
+  # Eigener Cloudflare Tunnel für TRAVLR. Läuft nur mit COMPOSE_PROFILES=tunnel in .env.
+  # Public Hostname im Dashboard: travlr.<domain> → HTTP → travlr:8000
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - travlr
