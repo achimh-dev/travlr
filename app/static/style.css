@@ -182,3 +182,16 @@ h1 { white-space: nowrap; }
 .access select { padding: 6px 8px; }
 .access .acc_taxi { width: 90px; }
 .access input:disabled { opacity: .4; }
+
+/* Spracheingabe */
+.voice-wrap { position: relative; }
+.voice-wrap textarea { padding-right: 52px; }
+button.mic {
+  position: absolute; right: 8px; bottom: 10px; flex: none; width: 38px; height: 38px; padding: 0;
+  border-radius: 50%; display: grid; place-items: center; background: var(--chip); color: var(--text);
+}
+button.mic[hidden] { display: none; }
+button.mic.listening { background: var(--accent); color: var(--accent-text); animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 8px transparent; } }
+@media (prefers-reduced-motion: reduce) { button.mic.listening { animation: none; } }

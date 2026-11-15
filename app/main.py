@@ -6,6 +6,7 @@ Start:  uvicorn app.main:app --host 0.0.0.0 --port 8000   →  http://localhost:
 from __future__ import annotations
 
 import base64
+import hashlib
 import html
 import json
 import logging
@@ -138,9 +139,17 @@ def page_html(name: str, start_url: str) -> str:
         "/static/icon.svg": data_uri("icon.svg"),
         "/static/favicon-32.png": data_uri("favicon-32.png"),
         "/static/apple-touch-icon.png": data_uri("apple-touch-icon.png"),
+        # Versions-Parameter aus dem Inhalt, damit Handys nach einem Update kein altes CSS/JS nutzen
+        "/static/style.css": f"/static/style.css?v={asset_version('style.css')}",
+        "/static/app.js": f"/static/app.js?v={asset_version('app.js')}",
     }.items():
         page = page.replace(f'"{path}"', f'"{uri}"')
     return page
+
+
+@lru_cache(maxsize=8)
+def asset_version(name: str) -> str:
+    return hashlib.sha256((STATIC / name).read_bytes()).hexdigest()[:10]
 
 
 @app.get("/manifest.webmanifest")

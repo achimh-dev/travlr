@@ -675,3 +675,42 @@ $("#run_digest").addEventListener("click", async (ev) => {
   ev.target.disabled = false; ev.target.textContent = "Jetzt auswerten";
   loadCommunity();
 });
+
+// ================================================================== Spracheingabe
+// Browser-eigene Spracherkennung (Chrome, Safari, Edge). Ohne Unterstützung bleibt der Knopf versteckt;
+// die Diktierfunktion der Handy-Tastatur funktioniert immer.
+(function setupVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const btn = $("#mic"), box = $("#request"), msg = $("#mic_msg");
+  if (!SR || !btn) return;
+  btn.hidden = false;
+  let rec = null, base = "";
+  const say = (t) => { msg.textContent = t; msg.hidden = !t; };
+  const stopUi = () => { btn.classList.remove("listening"); btn.setAttribute("aria-label", "Spracheingabe starten"); rec = null; };
+  const ERRORS = {
+    "not-allowed": "Mikrofon ist nicht erlaubt. In den Browser-Einstellungen freigeben oder die Diktierfunktion der Tastatur nutzen.",
+    "service-not-allowed": "Spracherkennung ist hier nicht verfügbar. Nutze die Diktierfunktion der Tastatur (Mikrofon-Taste).",
+    "audio-capture": "Kein Mikrofon gefunden.",
+    "network": "Spracherkennung braucht eine Internetverbindung.",
+  };
+  btn.addEventListener("click", () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR();
+    rec.lang = "de-DE";
+    rec.interimResults = true;
+    rec.continuous = false;
+    base = box.value.trim();
+    rec.onresult = (ev) => {
+      const text = [...ev.results].map((r) => r[0].transcript).join(" ").trim();
+      box.value = (base ? base + " " : "") + text;
+    };
+    rec.onerror = (ev) => { if (ev.error !== "no-speech" && ev.error !== "aborted") say(ERRORS[ev.error] || `Spracheingabe fehlgeschlagen (${ev.error}).`); };
+    rec.onend = stopUi;
+    try {
+      rec.start();
+      say("");
+      btn.classList.add("listening");
+      btn.setAttribute("aria-label", "Spracheingabe beenden");
+    } catch (e) { say("Spracheingabe konnte nicht starten."); stopUi(); }
+  });
+})();

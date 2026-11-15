@@ -127,3 +127,12 @@ def test_icons_embedded(monkeypatch, tmp_path):
         assert manifest["start_url"] == "https://travlr.example.de/"
         assert all(i["src"].startswith("data:image/png;base64,") for i in manifest["icons"])
     assert c.get("/manifest.webmanifest").json()["icons"][0]["src"] == "/static/icon-192.png"
+
+
+def test_assets_have_version(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    from app.main import app
+
+    html = TestClient(app).get("/").text
+    assert "/static/style.css?v=" in html and "/static/app.js?v=" in html
+    assert 'id="mic"' in html

@@ -33,8 +33,14 @@
   <div id="tab-suche" class="tab">
     <form id="form" class="card">
       <label for="request">Wohin willst du?</label>
-      <textarea id="request" rows="3" required
-        placeholder="z. B. Ende März eine Woche nach Lissabon. Oder: Im Mai 2 Wochen Japan, gern Business mit Meilen."></textarea>
+      <div class="voice-wrap">
+        <textarea id="request" rows="3" required
+          placeholder="z. B. Ende März eine Woche nach Lissabon. Oder: Im Mai 2 Wochen Japan, gern Business mit Meilen."></textarea>
+        <button type="button" id="mic" class="mic" hidden aria-label="Spracheingabe starten" title="Spracheingabe">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg>
+        </button>
+      </div>
+      <p id="mic_msg" class="fine" hidden></p>
 
       <fieldset class="prio">
         <legend>Was ist dir am wichtigsten?</legend>
