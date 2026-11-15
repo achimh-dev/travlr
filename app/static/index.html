@@ -187,7 +187,18 @@
         <div class="table-wrap"><table class="accounts access"><thead><tr><th>Flughafen</th><th>Anreise</th><th>Taxi hin+zurück €</th><th>Parken 1 / 3 / 7 / 14 Tage €</th></tr></thead><tbody id="access_rows"></tbody></table></div>
         <h3>Meilen &amp; Punkte</h3>
         <table class="accounts"><thead><tr><th>Programm</th><th>Stand</th><th>Status</th></tr></thead><tbody id="accounts"></tbody></table>
+        <div class="row center">
+          <button type="button" id="shot_btn" class="secondary">Stände aus Screenshot lesen</button>
+          <input type="file" id="shot_file" accept="image/*" hidden>
+          <span id="shot_msg" class="fine"></span>
+        </div>
+        <p class="fine">Screenshot der Amex-, Miles-&amp;-More- oder BA-App. Das Bild geht einmalig zur Auswertung an die Claude-API und wird nicht gespeichert. Erkannte Stände werden eingetragen, gespeichert wird erst mit „Profil speichern“.</p>
         <p class="fine" id="transfers"></p>
+        <details class="card-in"><summary>Weitere Programme</summary>
+          <p class="fine">Programme, die du später sammelst, hier einschalten. Amex-Punkte lassen sich auch ohne eigenes Konto dorthin übertragen; der Agent kennt alle Partner.</p>
+          <div id="more_programs" class="checks"></div>
+          <p class="fine" id="transfers_all"></p>
+        </details>
         <h3>Transfer-Boni</h3>
         <p class="fine">Laufende Aktionen (z. B. +30 % auf Flying Blue). Kommen auch aus dem Community-Digest; abgelaufene werden ignoriert.</p>
         <table class="accounts"><thead><tr><th>Programm</th><th>Bonus %</th><th>gültig bis</th><th></th></tr></thead><tbody id="bonuses"></tbody></table>

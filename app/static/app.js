@@ -85,16 +85,15 @@ async function loadProfile() {
   $("#card_fx_fee_pct").value = p.card_fx_fee_pct;
   $("#min_value").value = p.min_value_cent_per_mile;
   $("#profile_notes").value = p.notes || "";
-  const byProg = Object.fromEntries(p.accounts.map((a) => [a.program, a]));
-  $("#accounts").innerHTML = Object.entries(CONFIG.programs).map(([key, name]) => `
-    <tr data-program="${esc(key)}">
-      <td>${esc(name)}</td>
-      <td><input type="number" min="0" step="1" class="bal" value="${byProg[key]?.balance ?? 0}"></td>
-      <td><input class="status" value="${esc(byProg[key]?.status ?? "")}" placeholder="–"></td>
-    </tr>`).join("");
+  ACCOUNTS = Object.fromEntries(p.accounts.map((a) => [a.program, { ...a }]));
+  // Programme mit Stand bleiben sichtbar, auch wenn sie nicht ausgewählt sind
+  VISIBLE = [...new Set([...(p.visible_programs || DEFAULT_PROGRAMS), ...p.accounts.filter((a) => a.balance > 0).map((a) => a.program)])];
+  renderAccounts();
   const t = CONFIG.mr_transfers;
-  $("#transfers").textContent = `Amex-MR-Transfers (DE, Stand ${CONFIG.loyalty_stand}, vor Transfer in der Amex-App prüfen): ` +
-    Object.entries(t).map(([k, v]) => `${CONFIG.programs[k] || k} ${v.mr}:${v.miles}${v.via ? " via Payback" : ""}`).join(" · ") +
+  const fmtT = (k, v) => `${CONFIG.programs[k] || k} ${v.mr}:${v.miles}${v.via ? " via Payback" : ""}`;
+  $("#transfers").textContent = `Amex-Transfers (DE, Stand ${CONFIG.loyalty_stand}, vor Transfer in der Amex-App prüfen): ` +
+    Object.entries(t).filter(([k]) => VISIBLE.includes(k)).map(([k, v]) => fmtT(k, v)).join(" · ");
+  $("#transfers_all").textContent = "Alle Amex-Partner: " + Object.entries(t).map(([k, v]) => fmtT(k, v)).join(" · ") +
     " · Hotels: " + Object.entries(CONFIG.mr_hotel_transfers || {}).map(([k, v]) => `${k} ${v.mr}:${v.miles}`).join(" · ");
   PROFILE_BONUSES = p.transfer_bonuses || [];
   $("#bonuses").innerHTML = PROFILE_BONUSES.map(bonusRow).join("");
@@ -103,6 +102,73 @@ async function loadProfile() {
 }
 
 let PROFILE_BONUSES = [];
+const DEFAULT_PROGRAMS = ["amex_mr", "miles_and_more", "ba_club"];
+let ACCOUNTS = {};
+let VISIBLE = [...DEFAULT_PROGRAMS];
+
+function readAccountRows() {
+  document.querySelectorAll("#accounts tr").forEach((tr) => {
+    ACCOUNTS[tr.dataset.program] = { program: tr.dataset.program, balance: Number(tr.querySelector(".bal").value || 0),
+      status: tr.querySelector(".status").value.trim() };
+  });
+}
+
+function renderAccounts(highlight = []) {
+  $("#accounts").innerHTML = Object.entries(CONFIG.programs).filter(([key]) => VISIBLE.includes(key)).map(([key, name]) => `
+    <tr data-program="${esc(key)}" class="${highlight.includes(key) ? "picked" : ""}">
+      <td>${esc(name)}</td>
+      <td><input type="number" min="0" step="1" class="bal" value="${ACCOUNTS[key]?.balance ?? 0}"></td>
+      <td><input class="status" value="${esc(ACCOUNTS[key]?.status ?? "")}" placeholder="–"></td>
+    </tr>`).join("");
+  $("#more_programs").innerHTML = Object.entries(CONFIG.programs).map(([key, name]) =>
+    `<label><input type="checkbox" class="prog_toggle" value="${esc(key)}" ${VISIBLE.includes(key) ? "checked" : ""}> ${esc(name)}</label>`).join("");
+}
+
+document.addEventListener("change", (ev) => {
+  if (!ev.target.classList.contains("prog_toggle")) return;
+  readAccountRows();
+  const k = ev.target.value;
+  VISIBLE = ev.target.checked ? [...new Set([...VISIBLE, k])] : VISIBLE.filter((x) => x !== k);
+  renderAccounts();
+});
+
+// Screenshot verkleinern (max. 2000 px, JPEG) und auswerten lassen
+async function shrinkImage(file) {
+  const img = await createImageBitmap(file);
+  const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+  c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+  return new Promise((res) => c.toBlob(res, "image/jpeg", 0.88));
+}
+
+document.addEventListener("click", (ev) => { if (ev.target.id === "shot_btn") $("#shot_file").click(); });
+document.addEventListener("change", async (ev) => {
+  if (ev.target.id !== "shot_file" || !ev.target.files.length) return;
+  const file = ev.target.files[0];
+  ev.target.value = "";
+  const msg = $("#shot_msg"), btn = $("#shot_btn");
+  btn.disabled = true; msg.textContent = "Werte Screenshot aus …";
+  try {
+    let blob = file;
+    try { blob = await shrinkImage(file); } catch { /* z. B. HEIC ohne Decoder: Original schicken */ }
+    const fd = new FormData();
+    fd.append("image", blob, "screenshot.jpg");
+    const r = await fetch("/api/profile/accounts/from-screenshot", { method: "POST", body: fd });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(data.detail || `Fehler ${r.status}`);
+    readAccountRows();
+    const found = data.accounts || [];
+    for (const a of found) ACCOUNTS[a.program] = { program: a.program, balance: a.balance, status: a.status || ACCOUNTS[a.program]?.status || "" };
+    VISIBLE = [...new Set([...VISIBLE, ...found.map((a) => a.program)])];
+    renderAccounts(found.map((a) => a.program));
+    const notes = found.map((a) => a.note).filter(Boolean).concat(data.note ? [data.note] : []);
+    msg.textContent = found.length
+      ? `Erkannt: ${found.map((a) => `${CONFIG.programs[a.program] || a.program} ${fmtNum(a.balance)}`).join(", ")}. Bitte prüfen und „Profil speichern“.${notes.length ? " " + notes.join(" ") : ""}`
+      : (data.note || "Kein Kontostand erkannt.");
+  } catch (e) { msg.textContent = e.message; }
+  btn.disabled = false;
+});
 const bonusRow = (b) => `<tr>
   <td><select class="b_prog">${Object.keys(CONFIG.mr_transfers).filter((k) => k !== "miles_and_more").map((k) => `<option value="${esc(k)}" ${k === b.program ? "selected" : ""}>${esc(CONFIG.programs[k] || k)}</option>`).join("")}</select></td>
   <td><input class="b_pct" type="number" min="1" max="200" value="${esc(b.bonus_pct ?? "")}"></td>
@@ -121,11 +187,8 @@ document.addEventListener("click", (ev) => {
 });
 
 async function saveProfile() {
-  const accounts = [...document.querySelectorAll("#accounts tr")].map((tr) => ({
-    program: tr.dataset.program,
-    balance: Number(tr.querySelector(".bal").value || 0),
-    status: tr.querySelector(".status").value.trim(),
-  })).filter((a) => a.balance > 0 || a.status || ["amex_mr", "miles_and_more", "ba_club"].includes(a.program));
+  readAccountRows();
+  const accounts = Object.values(ACCOUNTS).filter((a) => VISIBLE.includes(a.program) && (a.balance > 0 || a.status || DEFAULT_PROGRAMS.includes(a.program)));
   const body = {
     home_airports: $("#home_airports").value.toUpperCase().replace(/\s/g, "") || "FRA",
     home_location: $("#home_location").value.trim(),
@@ -134,6 +197,7 @@ async function saveProfile() {
     airport_overrides: PROFILE_OVERRIDES,
     access: readAccess(),
     accounts,
+    visible_programs: VISIBLE,
     card: $("#card").value,
     card_fx_fee_pct: Number($("#card_fx_fee_pct").value || 0),
     min_value_cent_per_mile: Number($("#min_value").value || 0),

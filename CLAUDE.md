@@ -38,7 +38,11 @@ Ohne `SERPAPI_API_KEY` und `DUFFEL_API_KEY` läuft der Demo-Modus mit erfundenen
 - `community.py` – RSS lesen (defusedxml), Digest per `messages.parse` (strukturierte Ausgabe), Tipps und
   Transfer-Boni erst nach Freigabe.
 - `auth.py` – Login-Cookie (HMAC, 30 Tage) + optionale Cloudflare-Access-JWT-Prüfung. `notify.py` – ntfy.
+- `screenshot.py` – Meilenstände aus einem Screenshot lesen (Claude mit Bild, strukturierte Ausgabe); Bild wird
+  nicht gespeichert, die Oberfläche trägt nur Vorschläge ein.
 - `static/` – Oberfläche ohne Build-Schritt (Tabs: Suche, Preisalarme, Community, Profil), PWA-Icons.
+  Farben: Buttons grün (`--btn`), sonst neutral; Orange (`--brand`) nur sparsam (Logo, Empfehlungstitel).
+  Meilenübersicht zeigt `Profile.visible_programs`, weitere Programme im Menü „Weitere Programme“.
 - `scripts/` – Icon-Set (#151515, Grau/Weiß + Orange `#f47b20`): `python3 scripts/make_icon_svg.py`,
   dann `swift scripts/make-icons.swift` (macOS) für die PNGs in `app/static/`.
 - Daten (nicht im Git): `data/` mit `profile.json`, `watches.json`, `price_history.json`, `community/`, `cache/`,

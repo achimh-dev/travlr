@@ -35,6 +35,7 @@ Ein Claude-Agent plant mehrere Suchen über Google Flights, Duffel und Prämienf
 | **Community-Digest** | Einmal pro Woche: Deal-Seiten und Vielflieger-Foren (RSS) auswerten; passende Deals und neue Tricks. Übernommene Tipps kennt der Such-Agent dann als Hintergrundwissen |
 | **Anreise & Parken** | Jeder Flug zeigt im Kleingedruckten die Anreise ab Heimatflughafen: Taxi (z. B. zum nächsten Flughafen) oder Auto + Parkhaus für die Reisedauer (Schätzwerte für vorab gebuchtes Parken, je Flughafen überschreibbar). Empfehlungen und Alarme vergleichen über den **Gesamtpreis** |
 | **Meilen** | Kontostände (Amex MR, Miles & More, BA Club …), alle deutschen Amex-Transferpartner mit Kursen und Mindestmengen, Transfer-Boni (auch aus dem Digest übernehmbar), Sweet Spots und Fallen je Programm, Prämienflüge (seats.aero) mit Gegenwert in Cent pro Meile |
+| **Screenshot** | Meilenstände aus einem Screenshot der Amex-, Miles-&-More- oder BA-App lesen lassen; du prüfst und speicherst |
 | **Guthaben** | Reiseguthaben und Gutscheine im Profil; der Agent rechnet sie nur an, wenn die Buchung auf dem genannten Weg geht |
 | **Faktoren** | Priorität Preis/Komfort, Gepäck (Aufgabegepäck bei Low-Cost-Airlines wird geschätzt und eingerechnet), Umstiege, Reisezeit, Umstiegszeiten, Airlines ausschließen, getrennte Tickets, Positionierung, andere Märkte |
 
@@ -122,6 +123,7 @@ app/
   watches.py      Preisalarme, Deal-Radar, Prämien-Alarme, günstigste Daten (Travel Explore), Alarmregeln
   history.py      eigener Preisverlauf und Einordnung
   baggage.py      Schätzung Aufgabegepäck bei Low-Cost-Airlines
+  screenshot.py   Meilenstände aus Screenshot lesen
   scheduler.py    Hintergrund-Jobs: Alarme prüfen, Wochen-Digest
   community.py    RSS lesen, Digest mit Claude, freigegebene Tipps
   geo.py          Flughäfen im Umkreis, Fahrzeit-Schätzung, Geokodierung

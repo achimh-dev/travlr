@@ -288,6 +288,8 @@ class Profile(BaseModel):
         LoyaltyAccount(program="miles_and_more"),
         LoyaltyAccount(program="ba_club"),
     ]
+    # Programme, die in der Meilenübersicht angezeigt werden (weitere über "Weitere Programme")
+    visible_programs: list[str] = ["amex_mr", "miles_and_more", "ba_club"]
     card: str = "Amex Platinum"
     card_fx_fee_pct: float = 2.0  # Auslandseinsatzentgelt bei Zahlung in Fremdwährung
     min_value_cent_per_mile: float = 1.5  # ab diesem Gegenwert lohnt sich Meileneinsatz für dich

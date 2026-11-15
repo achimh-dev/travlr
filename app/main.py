@@ -17,12 +17,12 @@ from functools import lru_cache
 from pathlib import Path
 
 import anthropic
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import auth, community, notify, profile_store, scheduler
+from . import auth, community, notify, profile_store, scheduler, screenshot
 from .agent import AgentRun, AwardProvider, FlightProvider
 from .config import Settings, get_settings
 from .geo import airport_choices, geocode
@@ -252,6 +252,22 @@ def add_bonus(bonus: TransferBonus) -> Profile:
     p.transfer_bonuses = [b for b in p.transfer_bonuses if b.program != bonus.program] + [bonus]
     profile_store.save(s.data_dir, p)
     return p
+
+
+@app.post("/api/profile/accounts/from-screenshot")
+async def accounts_from_screenshot(image: UploadFile = File(...)) -> dict:
+    """Meilenstände aus einem Screenshot vorschlagen. Das Bild wird nicht gespeichert."""
+    data = await image.read(screenshot.MAX_BYTES + 1)
+    try:
+        result = screenshot.extract_balances(get_settings(), data, image.content_type or "")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    except anthropic.AuthenticationError:
+        raise HTTPException(503, "Claude-API-Key fehlt oder ist ungültig (ANTHROPIC_API_KEY).")
+    except (anthropic.APIError, RuntimeError) as exc:
+        log.warning("screenshot analysis failed: %s", exc)
+        raise HTTPException(502, "Screenshot konnte nicht ausgewertet werden. Bitte später erneut versuchen.")
+    return result.model_dump()
 
 
 @app.get("/api/nearby")
