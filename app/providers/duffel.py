@@ -16,6 +16,7 @@ import httpx
 
 from .cache import DiskCache
 from ..models import FlightOption, Layover, SearchQuery, SearchResult, Segment
+from .serpapi import price_note_for
 
 ENDPOINT = "https://api.duffel.com/air/offer_requests"
 MAX_COMBOS = 4  # Duffel kennt pro Strecke nur einen Flughafen; mehr Kombinationen = mehr Wartezeit
@@ -27,7 +28,10 @@ def build_bodies(q: SearchQuery) -> list[dict]:
     for origin, dest in list(product(q.origins, q.destinations))[:MAX_COMBOS]:
         slices = [{"origin": origin, "destination": dest, "departure_date": q.outbound_date}]
         if q.return_date:
-            slices.append({"origin": dest, "destination": origin, "departure_date": q.return_date})
+            # Gabelflug: erster Code der Rückflug-Flughäfen, sonst Hinflug umgekehrt
+            back_from = q.return_from[0] if q.return_from else dest
+            back_to = q.return_to[0] if q.return_to else origin
+            slices.append({"origin": back_from, "destination": back_to, "departure_date": q.return_date})
         data: dict = {
             "slices": slices,
             "passengers": [{"type": "adult"} for _ in range(q.adults)],
@@ -104,8 +108,7 @@ def parse_offers(offers: list[dict], q: SearchQuery, search_id: str, limit: int 
                 price=float(offer["total_amount"]) if offer.get("total_amount") else None,
                 currency=offer.get("total_currency") or q.currency,
                 trip_type=q.trip_type,
-                price_note=("Gesamtpreis Hin- und Rückflug" if q.return_date else "Preis One-Way")
-                + f" für {q.adults} Erw., direkt buchbarer Airline-Tarif",
+                price_note=price_note_for(q) + ", direkt buchbarer Airline-Tarif",
                 airlines=airlines,
                 segments=out_segs,
                 layovers=out_lay,

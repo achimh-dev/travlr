@@ -12,7 +12,8 @@ from datetime import date, datetime, timedelta
 from . import community, notify, profile_store
 from .config import Settings, get_settings
 from .geo import ground_calculator, home_airports
-from .loyalty import loyalty_brief
+from .history import PriceHistory
+from .loyalty import SEATS_AERO_SOURCE_TO_PROGRAM, loyalty_brief, program_name, reachable_miles
 from .watches import ExploreClient, Watch, WatchStore, check_watch
 
 log = logging.getLogger("travlr.scheduler")
@@ -37,13 +38,15 @@ def run_watch(settings: Settings, w: Watch, store: WatchStore | None = None, tod
     from .main import make_providers  # spätes Import, vermeidet Zyklus
 
     store = store or WatchStore(settings.data_dir)
-    providers, _ = make_providers(settings)
+    providers, award = make_providers(settings)
     explore = ExploreClient(settings.serpapi_api_key, settings.cache_dir, settings.cache_ttl_hours) \
         if settings.serpapi_api_key else None
     with _run_lock:
         prof = profile_store.load(settings.data_dir, settings.home_airports)
-        updated, messages = check_watch(w, providers[0], explore, watch_origins(settings, w), today or date.today(),
-                                        settings.currency, ground=ground_calculator(prof))
+        updated, messages = check_watch(w, providers[0] if providers else None, explore, watch_origins(settings, w), today or date.today(),
+                                        settings.currency, ground=ground_calculator(prof), award_provider=award,
+                                        price_history=PriceHistory(settings.data_dir),
+                                        award_hint=lambda src: award_hint(prof, src))
         for m in messages if notify.ntfy_configured(settings) else []:
             err = notify.send(settings, **m)
             if err:
@@ -52,13 +55,22 @@ def run_watch(settings: Settings, w: Watch, store: WatchStore | None = None, tod
     return updated
 
 
+def award_hint(prof, source: str) -> str:
+    """Kurzer Hinweis für den Push: Reichen die eigenen Meilen (inkl. Amex-Transfer)?"""
+    prog = SEATS_AERO_SOURCE_TO_PROGRAM.get(source)
+    if not prog:
+        return ""
+    return f"Mit {program_name(prog)} erreichbar: {reachable_miles(prof, prog):,} (inkl. Amex-Transfer).".replace(",", ".")
+
+
 def digest_context(settings: Settings) -> str:
     prof = profile_store.load(settings.data_dir, settings.home_airports)
     watches = WatchStore(settings.data_dir).load()
     near = home_airports(prof)
     parts = [
         f"Wohnort: {prof.home_location or '–'}; Flughäfen in Fahrweite: {', '.join(a.code for a in near) or prof.home_airports}",
-        "Alarme: " + ("; ".join(f"{w.name} ({w.destinations or 'überall'}, bis {w.max_price:.0f} €)" for w in watches) or "keine"),
+        "Alarme: " + ("; ".join(f"{w.name} ({w.destinations or 'überall'}, bis {w.max_price:.0f} "
+                                 f"{'Meilen' if w.kind == 'award' else '€'})" for w in watches) or "keine"),
         "Meilen:\n" + loyalty_brief(prof),
     ]
     return "\n".join(parts)

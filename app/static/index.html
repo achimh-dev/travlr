@@ -114,9 +114,9 @@
   <div id="tab-alarme" class="tab" hidden>
     <section class="card">
       <h2>Preisalarme &amp; Deal-Radar</h2>
-      <p class="fine">Route-Alarm: Eine Strecke wird regelmäßig zu wechselnden Daten im Zeitfenster geprüft. Deal-Radar: Wohin komme ich ab meinem Umkreis unter X €? Prüfungen laufen ohne KI und verbrauchen nur Flugsuchen. <span id="ntfy_state"></span></p>
+      <p class="fine">Route-Alarm: Eine Strecke wird regelmäßig zu wechselnden Daten im Zeitfenster geprüft. Deal-Radar: Wohin komme ich ab meinem Umkreis unter X €? Prämien-Alarm: Push, sobald auf einer Strecke ein Prämienplatz unter deiner Meilen-Schwelle frei wird (seats.aero). Prüfungen laufen ohne KI. <span id="ntfy_state"></span></p>
       <div id="watches"></div>
-      <div class="row"><button type="button" id="new_route" class="secondary">+ Route-Alarm</button><button type="button" id="new_radar" class="secondary">+ Deal-Radar</button><button type="button" id="test_push" class="secondary">Test-Push senden</button></div>
+      <div class="row"><button type="button" id="new_route" class="secondary">+ Route-Alarm</button><button type="button" id="new_radar" class="secondary">+ Deal-Radar</button><button type="button" id="new_award" class="secondary">+ Prämien-Alarm</button><button type="button" id="test_push" class="secondary">Test-Push senden</button></div>
     </section>
     <form id="watch_form" class="card" hidden>
       <h2 id="watch_form_title">Alarm</h2>
@@ -125,17 +125,18 @@
         <div class="field wide"><label for="w_name">Name</label><input id="w_name" required placeholder="z. B. New York günstig"></div>
         <div class="field"><label for="w_origins">Abflug (leer = Umkreis)</label><input id="w_origins" placeholder="DTM,DUS,CGN"></div>
         <div class="field"><label for="w_destinations" id="w_dest_label">Ziel-Flughäfen</label><input id="w_destinations" placeholder="JFK,EWR"></div>
-        <div class="field"><label for="w_max_price">Alarm unter (€ inkl. Anreise/Parken)</label><input id="w_max_price" type="number" min="1" required></div>
+        <div class="field"><label for="w_max_price" id="w_price_label">Alarm unter (€ inkl. Anreise/Parken)</label><input id="w_max_price" type="number" min="1" required></div>
         <div class="field"><label for="w_adults">Reisende</label><input id="w_adults" type="number" min="1" max="9" value="1"></div>
-        <div class="field"><label for="w_date_from">Hinflug frühestens</label><input id="w_date_from" type="date"></div>
-        <div class="field"><label for="w_date_to">Hinflug spätestens</label><input id="w_date_to" type="date"></div>
-        <div class="field"><label for="w_nights_min">Nächte min.</label><input id="w_nights_min" type="number" min="0" max="60" value="5"></div>
-        <div class="field"><label for="w_nights_max">Nächte max.</label><input id="w_nights_max" type="number" min="0" max="60" value="9"></div>
+        <div class="field"><label for="w_date_from" id="w_date_from_label">Hinflug frühestens</label><input id="w_date_from" type="date"></div>
+        <div class="field"><label for="w_date_to" id="w_date_to_label">Hinflug spätestens</label><input id="w_date_to" type="date"></div>
+        <div class="field not-award"><label for="w_nights_min">Nächte min.</label><input id="w_nights_min" type="number" min="0" max="60" value="5"></div>
+        <div class="field not-award"><label for="w_nights_max">Nächte max.</label><input id="w_nights_max" type="number" min="0" max="60" value="9"></div>
         <div class="field"><label for="w_cabin">Kabine</label><select id="w_cabin"><option value="economy">Economy</option><option value="premium_economy">Premium Economy</option><option value="business">Business</option><option value="first">First</option></select></div>
-        <div class="field"><label for="w_stops">Umstiege</label><select id="w_stops"><option value="any">egal</option><option value="nonstop">nonstop</option><option value="max1">max. 1</option><option value="max2">max. 2</option></select></div>
-        <div class="field"><label for="w_samples">Daten pro Prüfung</label><input id="w_samples" type="number" min="1" max="10" value="2"></div>
+        <div class="field"><label for="w_stops">Umstiege</label><select id="w_stops"><option value="any">egal</option><option value="nonstop">nonstop</option><option value="max1" class="not-award">max. 1</option><option value="max2" class="not-award">max. 2</option></select></div>
+        <div class="field not-award"><label for="w_samples">Daten pro Prüfung</label><input id="w_samples" type="number" min="1" max="10" value="2"></div>
         <div class="field"><label for="w_interval">Prüfen alle (h)</label><input id="w_interval" type="number" min="1" max="168" value="24"></div>
       </div>
+      <p class="fine" id="w_award_hint" hidden>Eine Richtung. Für den Rückflug einen zweiten Prämien-Alarm mit getauschten Flughäfen anlegen. Tipp: auch Hubs wie AMS, CDG, MAD, LHR als Abflug eintragen. Braucht SEATS_AERO_API_KEY.</p>
       <label class="inline"><input type="checkbox" id="w_active" checked> aktiv</label>
       <p class="fine" id="w_usage"></p>
       <div class="row"><button type="submit">Speichern</button><button type="button" id="w_cancel" class="secondary">Abbrechen</button></div>
@@ -181,6 +182,18 @@
         <h3>Meilen &amp; Punkte</h3>
         <table class="accounts"><thead><tr><th>Programm</th><th>Stand</th><th>Status</th></tr></thead><tbody id="accounts"></tbody></table>
         <p class="fine" id="transfers"></p>
+        <h3>Transfer-Boni</h3>
+        <p class="fine">Laufende Aktionen (z. B. +30 % auf Flying Blue). Kommen auch aus dem Community-Digest; abgelaufene werden ignoriert.</p>
+        <table class="accounts"><thead><tr><th>Programm</th><th>Bonus %</th><th>gültig bis</th><th></th></tr></thead><tbody id="bonuses"></tbody></table>
+        <div class="row"><button type="button" id="add_bonus" class="secondary">+ Bonus</button></div>
+        <h3>Guthaben &amp; Gutscheine</h3>
+        <p class="fine">Reiseguthaben deiner Karte oder Airline-Gutscheine. Der Agent rechnet sie nur an, wenn die Buchung auf dem genannten Weg geht.</p>
+        <div class="table-wrap"><table class="accounts"><thead><tr><th>Name</th><th>€</th><th>Bedingung</th><th>gültig bis</th><th></th></tr></thead><tbody id="credits"></tbody></table></div>
+        <div class="row"><button type="button" id="add_credit" class="secondary">+ Guthaben</button></div>
+        <details class="card-in"><summary>Meilenwissen: lohnende Einlösungen und Fallen</summary>
+          <p class="fine">Richtwerte, die der Agent kennt. Konkrete Preise und Zuschläge immer im Programm prüfen.</p>
+          <ul id="sweet_spots" class="searches"></ul>
+        </details>
         <label for="profile_notes">Notizen für den Agenten</label>
         <input id="profile_notes" placeholder="z. B. Lounge-Zugang über Amex Platinum vorhanden">
         <div class="row center"><button type="button" id="save_profile" class="secondary">Profil speichern</button><span id="profile_msg" class="fine"></span></div>

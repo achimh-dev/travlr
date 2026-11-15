@@ -6,6 +6,7 @@ zwischengespeichert (siehe CACHE_TTL_HOURS).
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,20 +22,31 @@ _CLASS = {"economy": 1, "premium_economy": 2, "business": 3, "first": 4}
 
 
 def build_params(q: SearchQuery) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "engine": "google_flights",
-        "departure_id": ",".join(q.origins),
-        "arrival_id": ",".join(q.destinations),
-        "outbound_date": q.outbound_date,
-        "type": 1 if q.return_date else 2,
+    params: dict[str, Any] = {"engine": "google_flights"}
+    if q.open_jaw:
+        # Multi-City: Daten stehen in den einzelnen Strecken, nicht in outbound_date/return_date.
+        params["type"] = 3
+        params["multi_city_json"] = json.dumps([
+            {"departure_id": ",".join(q.origins), "arrival_id": ",".join(q.destinations), "date": q.outbound_date},
+            {"departure_id": ",".join(q.return_origins), "arrival_id": ",".join(q.return_destinations),
+             "date": q.return_date},
+        ], separators=(",", ":"))
+    else:
+        params.update({
+            "departure_id": ",".join(q.origins),
+            "arrival_id": ",".join(q.destinations),
+            "outbound_date": q.outbound_date,
+            "type": 1 if q.return_date else 2,
+        })
+    params.update({
         "adults": q.adults,
         "stops": _STOPS[q.stops],
         "travel_class": _CLASS[q.travel_class],
         "currency": q.currency,
         "hl": "de",
         "gl": q.point_of_sale.lower(),
-    }
-    if q.return_date:
+    })
+    if q.return_date and not q.open_jaw:
         params["return_date"] = q.return_date
     if q.carry_on_bags:
         params["bags"] = q.carry_on_bags
@@ -70,11 +82,7 @@ def parse_response(data: dict, q: SearchQuery, search_id: str, cached: bool = Fa
         # "Google Flights hasn't returned any results" ist kein echter Fehler, sondern "nichts gefunden".
         return SearchResult(search_id=search_id, query=q, options=[], error=data["error"], google_flights_url=url)
 
-    price_note = (
-        f"Gesamtpreis Hin- und Rückflug für {q.adults} Erw."
-        if q.return_date
-        else f"Preis One-Way für {q.adults} Erw."
-    )
+    price_note = price_note_for(q)
     options: list[FlightOption] = []
     groups = [(True, data.get("best_flights") or []), (False, data.get("other_flights") or [])]
     for is_best, items in groups:
@@ -128,6 +136,14 @@ def parse_response(data: dict, q: SearchQuery, search_id: str, cached: bool = Fa
     return SearchResult(
         search_id=search_id, query=q, options=options, insights=insights, google_flights_url=url, cached=cached
     )
+
+
+def price_note_for(q: SearchQuery) -> str:
+    if q.open_jaw:
+        return f"Gesamtpreis Gabelflug (beide Strecken) für {q.adults} Erw."
+    if q.return_date:
+        return f"Gesamtpreis Hin- und Rückflug für {q.adults} Erw."
+    return f"Preis One-Way für {q.adults} Erw."
 
 
 def _segment(f: dict) -> Segment:

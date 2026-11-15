@@ -11,6 +11,7 @@ import random
 from datetime import datetime, timedelta
 
 from ..models import FlightOption, Layover, PriceInsights, SearchQuery, SearchResult, Segment
+from .serpapi import price_note_for
 
 _AIRLINES = [
     ("Lufthansa", "LH", 1.35),
@@ -29,7 +30,9 @@ class DemoProvider:
     name = "demo"
 
     def search(self, q: SearchQuery, search_id: str) -> SearchResult:
-        seed = int(hashlib.sha256(q.model_dump_json().encode()).hexdigest()[:12], 16)
+        # Seed ohne leere Gabelflug-Felder, damit normale Suchen die gleichen Demo-Daten liefern wie bisher
+        seed_src = q.model_dump_json(exclude=None if q.open_jaw else {"return_from", "return_to"})
+        seed = int(hashlib.sha256(seed_src.encode()).hexdigest()[:12], 16)
         rnd = random.Random(seed)
         base = rnd.uniform(60, 220) * q.adults * (1.8 if q.return_date else 1.0)
         base *= {"economy": 1, "premium_economy": 1.8, "business": 3.5, "first": 6}[q.travel_class]
@@ -68,8 +71,7 @@ class DemoProvider:
                 FlightOption(
                     id=f"{search_id}-{i + 1}", search_id=search_id, price=price, currency=q.currency,
                     trip_type=q.trip_type,
-                    price_note=("Gesamtpreis Hin- und Rückflug" if q.return_date else "Preis One-Way")
-                    + f" für {q.adults} Erw. (DEMO)",
+                    price_note=price_note_for(q) + " (DEMO)",
                     airlines=[name], segments=segments, layovers=layovers, stops=stops,
                     total_duration_min=total, is_best=i < 2, demo=True, source="demo",
                     point_of_sale=q.point_of_sale,
@@ -84,3 +86,30 @@ class DemoProvider:
                                    typical_range=[round(base * 0.8), round(base * 1.3)]),
             google_flights_url="https://www.google.com/travel/flights",
         )
+
+
+class DemoExplore:
+    """Erfundene "günstigste Daten" für den Demo-Modus (wie Google Travel Explore mit festem Ziel)."""
+
+    def cheapest_dates(self, origin, destination, month, duration, adults, travel_class="economy", one_way=False,
+                       currency="EUR"):
+        rnd = random.Random(f"{origin}{destination}{month}{duration}{adults}{travel_class}{one_way}")
+        today = datetime.now().date()
+        rows = []
+        for _ in range(3):
+            if month:
+                year = today.year + (1 if month < today.month else 0)
+                start = datetime(year, month, rnd.randint(1, 28)).date()
+            else:
+                start = today + timedelta(days=rnd.randint(14, 170))
+            nights = {1: 2, 2: 7, 3: 14}.get(duration, 7)
+            rows.append({
+                "price": float(round(rnd.uniform(70, 400) * adults)), "currency": currency, "origin": origin,
+                "destination": destination, "destination_name": destination, "country": "",
+                "outbound": start.isoformat(),
+                "inbound": None if one_way else (start + timedelta(days=nights)).isoformat(),
+                "airline": rnd.choice([a[0] for a in _AIRLINES]), "stops": rnd.choice([0, 1]),
+                "url": "https://www.google.com/travel/explore", "demo": True,
+            })
+        rows.sort(key=lambda r: r["price"])
+        return rows, None

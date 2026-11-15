@@ -20,7 +20,8 @@ Ohne `SERPAPI_API_KEY` und `DUFFEL_API_KEY` läuft der Demo-Modus mit erfundenen
 ## Architektur (app/)
 
 - `agent.py` – Such-Agent: Claude (`claude-opus-5-5`, Tool Runner aus dem `anthropic`-SDK, `effort` medium,
-  server-seitige `fallbacks="default"`) mit Tools `search_flights`, `search_award_space`, `recommend_options`.
+  server-seitige `fallbacks="default"`) mit Tools `search_flights` (auch Gabelflüge über `return_from`/`return_to`),
+  `find_cheapest_dates` (Travel Explore, zählt ins Suchbudget), `search_award_space`, `recommend_options`.
   Dynamischer Kontext (Präferenzen, Profil, Umkreis, Parken, freigegebene Tipps) steht in der User-Nachricht,
   der System-Prompt bleibt stabil.
 - `providers/` – `serpapi.py` (Google Flights), `duffel.py`, `seats_aero.py` (Prämien), `demo.py`; Dateicache in `cache.py`.
@@ -28,13 +29,20 @@ Ohne `SERPAPI_API_KEY` und `DUFFEL_API_KEY` läuft der Demo-Modus mit erfundenen
 - `geo.py` – Flughäfen im Umkreis (Fahrzeit-Schätzung), Auswahl per Profil-Overrides, Geokodierung.
 - `ground.py` – Anreise: Taxi (fester Betrag) oder Auto + Parken (Schätzwerte 1/3/7/14 Tage, interpoliert).
   Vergleiche laufen über den Gesamtpreis.
-- `watches.py` + `scheduler.py` – Preisalarme und Deal-Radar (SerpApi `google_travel_explore`), Hintergrund-Thread.
-- `community.py` – RSS lesen (defusedxml), Digest per `messages.parse` (strukturierte Ausgabe), Tipps erst nach Freigabe.
+- `watches.py` + `scheduler.py` – Preisalarme, Deal-Radar (SerpApi `google_travel_explore`) und Prämien-Alarme
+  (seats.aero; `max_price` ist dort die Meilen-Schwelle), Hintergrund-Thread.
+- `history.py` – eigener Preisverlauf (`data/price_history.json`) aus echten Suchen und Alarmen; Demo-Daten nie.
+- `baggage.py` – Aufgabegepäck bei Low-Cost-Airlines schätzen (Google rechnet nur Handgepäck ein).
+- `loyalty.py` – Programme, alle deutschen Amex-MR-Transferpartner, Sweet Spots, Transfer-Boni, erreichbare Meilen
+  (Avios-Familie BA/Iberia/Qatar teilt den Bestand). Stand und Quellen im Modulkopf.
+- `community.py` – RSS lesen (defusedxml), Digest per `messages.parse` (strukturierte Ausgabe), Tipps und
+  Transfer-Boni erst nach Freigabe.
 - `auth.py` – Login-Cookie (HMAC, 30 Tage) + optionale Cloudflare-Access-JWT-Prüfung. `notify.py` – ntfy.
 - `static/` – Oberfläche ohne Build-Schritt (Tabs: Suche, Preisalarme, Community, Profil), PWA-Icons.
 - `scripts/` – Icon-Set (#151515, Grau/Weiß + Orange `#f47b20`): `python3 scripts/make_icon_svg.py`,
   dann `swift scripts/make-icons.swift` (macOS) für die PNGs in `app/static/`.
-- Daten (nicht im Git): `data/` mit `profile.json`, `watches.json`, `community/`, `cache/`, `.session_secret`.
+- Daten (nicht im Git): `data/` mit `profile.json`, `watches.json`, `price_history.json`, `community/`, `cache/`,
+  `.session_secret`.
 
 ## Konventionen
 
@@ -56,4 +64,7 @@ Ohne `SERPAPI_API_KEY` und `DUFFEL_API_KEY` läuft der Demo-Modus mit erfundenen
 - Default-RSS-Feeds (`app/community.py: DEFAULT_FEEDS`) sind ungeprüft; Vielfliegertreff/FlyerTalk deaktiviert.
 - Parkpreise (`app/ground.py`) sind grobe Schätzungen; AMS besonders unsicher.
 - Wie viele Abflughäfen Google Flights pro Suche annimmt, ist unklar; Alarme teilen vorsichtig in 7er-Gruppen.
-- Ideen: Bahnpreise für die Anreise, Buchung über Duffel mit Bestätigung, Rückflug zu anderem Heimatflughafen.
+- Gabelflüge (SerpApi `type=3`) und `find_cheapest_dates` (Travel Explore mit `arrival_id` + `month`) sind ungetestet
+  mit echten Keys; ob Travel Explore bei festem Ziel mehrere Daten liefert, ist offen.
+- Sweet Spots, Transferkurse und Gepäckpreise sind Stand November 2026 und müssen gepflegt werden.
+- Ideen: Buchung über Duffel mit Bestätigung.

@@ -26,7 +26,7 @@ def test_filters():
 def test_loyalty():
     p = Profile(accounts=[LoyaltyAccount(program="amex_mr", balance=50000), LoyaltyAccount(program="ba_club", balance=10000)])
     text = loyalty_brief(p)
-    assert "bis zu 40.000 (+ vorhandene = 50.000)" in text  # 50k MR → 40k Avios (5:4)
+    assert "bis zu 40.000, insgesamt erreichbar 50.000" in text  # 50k MR → 40k Avios (5:4) + 10k vorhanden
     assert "Payback" in text
     assert cents_per_mile(1200, 60000, 200) == 1.67
 

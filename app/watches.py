@@ -5,6 +5,8 @@
   Alarmschwelle verglichen. Google liefert dazu das Preisniveau (niedrig/typisch/hoch).
 - Deal-Radar: "Wohin komme ich unter X €?" über Google Travel Explore (SerpApi), optional gefiltert
   nach Ländern oder Zielflughäfen.
+- Prämien-Alarm: Prämienplätze (seats.aero) auf einer Strecke im Zeitfenster; Alarm, sobald ein Platz unter
+  der Meilen-Schwelle frei wird. `max_price` ist hier die Schwelle in Meilen pro Person und Richtung.
 
 Die Prüfungen laufen ohne Claude (keine KI-Kosten) und verbrauchen nur Flugsuchen.
 """
@@ -21,6 +23,7 @@ from typing import Literal
 import httpx
 from pydantic import BaseModel, Field
 
+from . import history
 from .ground import trip_days
 from .models import SearchQuery, StopsFilter, TravelClass
 from .providers.cache import DiskCache
@@ -55,6 +58,10 @@ class BestFind(BaseModel):
     checked_at: str = ""
     ground: float | None = None  # Anreise + Parken (Schätzung)
     ground_note: str = ""
+    # Prämien-Alarm: price = Meilen pro Person, dazu Steuern und Programm
+    taxes: float | None = None
+    program: str = ""
+    seats: int | None = None
 
     @property
     def total(self) -> float:
@@ -63,7 +70,7 @@ class BestFind(BaseModel):
 
 class Watch(BaseModel):
     id: str = Field(default_factory=lambda: uuid.uuid4().hex[:8])
-    kind: Literal["route", "radar"] = "route"
+    kind: Literal["route", "radar", "award"] = "route"
     name: str
     origins: str = ""  # leer = Flughäfen im Umkreis aus dem Profil
     destinations: str = ""  # Route: IATA-Codes. Radar: optionaler Filter (Länder oder IATA-Codes)
@@ -71,7 +78,7 @@ class Watch(BaseModel):
     date_to: str | None = None  # spätester Hinflug; None = in 90 Tagen
     nights_min: int = Field(5, ge=0, le=60)
     nights_max: int = Field(9, ge=0, le=60)
-    max_price: float = Field(gt=0)  # Alarmschwelle: Flug + Anreise/Parken, gesamt für alle Reisenden
+    max_price: float = Field(gt=0)  # Schwelle: Flug + Anreise/Parken gesamt; beim Prämien-Alarm Meilen p. P.
     adults: int = Field(1, ge=1, le=9)
     cabin: TravelClass = "economy"
     stops: StopsFilter = "any"
@@ -103,6 +110,8 @@ class Watch(BaseModel):
         return now - datetime.fromisoformat(self.last_checked) >= timedelta(hours=self.interval_hours)
 
     def searches_per_month(self, n_origins: int = 1) -> int:
+        if self.kind == "award":
+            return round(24 / self.interval_hours * 30)  # eine seats.aero-Abfrage pro Prüfung
         per_check = self.samples_per_check * (len(origin_groups(["x"] * n_origins)) if self.kind == "route" else 1)
         if self.kind == "radar":
             per_check = min(2, n_origins) or 1  # Radar: ein Datum, höchstens 2 Abflughäfen
@@ -180,19 +189,15 @@ def sample_dates(w: Watch, today: date) -> list[tuple[str, str | None]]:
 
 
 class ExploreClient:
-    """Deal-Radar über SerpApi `google_travel_explore`. Antwort wird tolerant geparst."""
+    """Google Travel Explore über SerpApi: Deal-Radar und günstigste Daten einer Strecke.
+    Antwort wird tolerant geparst."""
 
     def __init__(self, api_key: str, cache_dir: Path, cache_ttl_hours: float = 6, timeout: float = 60):
         self.api_key = api_key
         self.cache = DiskCache(cache_dir, cache_ttl_hours, "explore")
         self.timeout = timeout
 
-    def explore(self, origin: str, outbound: str, inbound: str | None, adults: int, max_price: float,
-                currency: str = "EUR") -> tuple[list[dict], str | None]:
-        params = {"engine": "google_travel_explore", "departure_id": origin, "outbound_date": outbound,
-                  "adults": adults, "currency": currency, "hl": "de", "gl": "de", "max_price": int(max_price)}
-        if inbound:
-            params["return_date"] = inbound
+    def _get(self, params: dict) -> tuple[dict | None, str | None]:
         data = self.cache.get(params)
         if data is None:
             try:
@@ -200,11 +205,34 @@ class ExploreClient:
                                  timeout=self.timeout)
                 data = resp.json()
             except (httpx.HTTPError, ValueError) as exc:
-                return [], f"SerpApi nicht erreichbar: {exc}"
+                return None, f"SerpApi nicht erreichbar: {exc}"
             if "error" in data:
-                return [], data["error"]
+                return None, data["error"]
             self.cache.set(params, data)
-        return parse_explore(data, origin, currency), None
+        return data, None
+
+    def explore(self, origin: str, outbound: str, inbound: str | None, adults: int, max_price: float,
+                currency: str = "EUR") -> tuple[list[dict], str | None]:
+        params = {"engine": "google_travel_explore", "departure_id": origin, "outbound_date": outbound,
+                  "adults": adults, "currency": currency, "hl": "de", "gl": "de", "max_price": int(max_price)}
+        if inbound:
+            params["return_date"] = inbound
+        data, err = self._get(params)
+        return (parse_explore(data, origin, currency) if data else []), err
+
+    def cheapest_dates(self, origin: str, destination: str, month: int, duration: int, adults: int,
+                       travel_class: str = "economy", one_way: bool = False,
+                       currency: str = "EUR") -> tuple[list[dict], str | None]:
+        """Günstigste Reisedaten einer Strecke in einem Monat (0 = nächste 6 Monate).
+        duration: 1 Wochenende, 2 eine Woche, 3 zwei Wochen."""
+        params = {"engine": "google_travel_explore", "departure_id": origin, "arrival_id": destination,
+                  "month": month, "travel_duration": duration, "adults": adults, "currency": currency,
+                  "hl": "de", "gl": "de", "travel_class": _CLASS.get(travel_class, 1), "type": 2 if one_way else 1}
+        data, err = self._get(params)
+        return (parse_explore(data, origin, currency) if data else []), err
+
+
+_CLASS = {"economy": 1, "premium_economy": 2, "business": 3, "first": 4}
 
 
 def parse_explore(data: dict, origin: str, currency: str = "EUR") -> list[dict]:
@@ -245,20 +273,28 @@ def _num(v) -> float | None:
 
 
 def check_watch(w: Watch, flight_provider, explore: ExploreClient | None, origins: list[str], today: date,
-                currency: str = "EUR", ground=None) -> tuple[Watch, list[dict]]:
-    """Führt eine Prüfung aus. Gibt den aktualisierten Watch und auszulösende Benachrichtigungen zurück."""
+                currency: str = "EUR", ground=None, award_provider=None, price_history=None,
+                award_hint=None) -> tuple[Watch, list[dict]]:
+    """Führt eine Prüfung aus. Gibt den aktualisierten Watch und auszulösende Benachrichtigungen zurück.
+    award_hint(program) → kurzer Text, ob das Profil genug Meilen hat (optional)."""
     now = datetime.now().isoformat(timespec="seconds")
     w = w.model_copy(deep=True)
+    if w.kind == "award":
+        return _check_award(w, award_provider, origins, today, now, award_hint)
     finds: list[BestFind] = []
     errors: list[str] = []
     pairs = sample_dates(w, today)
 
-    if w.kind == "route":
+    if w.kind == "route" and flight_provider is None:
+        errors.append("Keine Flugquelle konfiguriert (SERPAPI_API_KEY oder DUFFEL_API_KEY).")
+    elif w.kind == "route":
         dests = [c.strip().upper() for c in w.destinations.split(",") if c.strip()]
         for (out, ret), group in [(p, g) for p in pairs for g in origin_groups(origins)]:
             q = SearchQuery(origins=group, destinations=dests, outbound_date=out, return_date=ret, adults=w.adults,
                             stops=w.stops, travel_class=w.cabin, currency=currency)
             r = flight_provider.search(q, f"W{w.id}")
+            if price_history is not None and not r.demo:
+                price_history.record(history.entries_for(q, r.options))
             if r.error and not r.options:
                 errors.append(r.error)
                 continue
@@ -322,6 +358,55 @@ def check_watch(w: Watch, flight_provider, explore: ExploreClient | None, origin
                 if len(notifications) >= 3:
                     break
     return w, notifications
+
+
+def _check_award(w: Watch, award_provider, origins: list[str], today: date, now: str,
+                 award_hint=None) -> tuple[Watch, list[dict]]:
+    notifications: list[dict] = []
+    w.checks += 1
+    w.last_checked = now
+    if award_provider is None:
+        w.last_error = "Prämien-Alarm braucht einen SEATS_AERO_API_KEY (seats.aero Pro)."
+        return w, notifications
+    start, end = w.window(today)
+    dests = [c.strip().upper() for c in w.destinations.split(",") if c.strip()]
+    awards, err = award_provider.search(origins, dests, start.isoformat(), end.isoformat(), w.cabin, f"W{w.id}")
+    w.last_error = err
+    if w.stops == "nonstop":
+        awards = [a for a in awards if a.direct]
+    if w.adults > 1:
+        awards = [a for a in awards if a.seats is None or a.seats >= w.adults]
+    if not awards:
+        return w, notifications
+    finds = [BestFind(price=a.miles, currency="MILES", origin=a.origin, destination=a.destination,
+                      outbound=a.date, airline=a.airlines, stops=0 if a.direct else None, checked_at=now,
+                      taxes=a.taxes, program=a.program, seats=a.seats) for a in awards]
+    best = min(finds, key=lambda f: (f.price, f.taxes or 0))
+    w.best = best
+    w.history = (w.history + [PricePoint(t=now, price=best.price)])[-HISTORY_MAX:]
+    if w.best_ever is None or best.price < w.best_ever.price:
+        w.best_ever = best
+    for f in sorted(finds, key=lambda f: f.price):
+        key = f"{f.program}|{f.origin}-{f.destination}|{f.outbound}|{int(f.price)}"
+        if f.price <= w.max_price and key not in w.seen_deals:
+            w.seen_deals = (w.seen_deals + [key])[-300:]
+            notifications.append(_award_message(w, f, award_hint(f.program) if award_hint else ""))
+            if len(notifications) >= 3:
+                break
+    return w, notifications
+
+
+def _award_message(w: Watch, f: BestFind, hint: str = "") -> dict:
+    taxes = f" + {f.taxes:.0f} € Steuern" if f.taxes is not None else ""
+    seats = f", {f.seats} Plätze" if f.seats else ""
+    return {
+        "title": f"🎟 {w.name}: {f.price:,.0f} Meilen".replace(",", "."),
+        "message": f"{f.origin} → {f.destination} am {_fmt_date(f.outbound)}, {w.cabin}, über {f.program}"
+                   f"{taxes}{seats}. {f.airline}. {hint} Verfügbarkeit vor dem Transfer im Programm prüfen.".strip(),
+        "click": None,
+        "tags": ["ticket"],
+        "priority": 4,
+    }
 
 
 def _should_notify(w: Watch, price: float, now: str) -> bool:

@@ -19,11 +19,12 @@ from typing import Literal, Protocol, TypedDict
 import anthropic
 from anthropic import beta_tool
 
-from . import filters
+from . import baggage, filters, history
 from .config import Settings
 from .geo import ground_calculator, home_airports
 from .ground import trip_days
-from .loyalty import PROGRAMS, SEATS_AERO_SOURCE_TO_PROGRAM, cents_per_mile, loyalty_brief
+from .loyalty import (PROGRAMS, SEATS_AERO_SOURCE_TO_PROGRAM, cents_per_mile, credits_brief, loyalty_brief,
+                      reachable_miles)
 from .models import AwardOption, FlightOption, Preferences, Profile, SearchQuery, SearchResult
 
 
@@ -40,7 +41,14 @@ class AwardProvider(Protocol):
                search_id: str) -> tuple[list[AwardOption], str | None]: ...
 
 
+class ExploreProvider(Protocol):
+    def cheapest_dates(self, origin: str, destination: str, month: int, duration: int, adults: int,
+                       travel_class: str = "economy", one_way: bool = False,
+                       currency: str = "EUR") -> tuple[list[dict], str | None]: ...
+
+
 _SUFFIX = {"serpapi": "g", "duffel": "d", "demo": ""}
+_DURATION = {"weekend": 1, "week": 2, "two_weeks": 3}
 MAX_AWARD_SEARCHES = 4
 
 SYSTEM_PROMPT = """Du bist ein Flugsuch-Agent, der für den Nutzer die insgesamt günstigsten Flüge findet, \
@@ -54,9 +62,13 @@ Umstiegszeiten, ausgeschlossene Airlines) sind bereits herausgefiltert; `filtere
 - Jede Suche kostet Kontingent. Plane gezielt und bündle: mehrere Flughäfen in EINER Suche angeben \
 (z. B. origins "FRA,HHN,STR").
 - `search_award_space` (falls vorhanden) zeigt Prämienflug-Verfügbarkeit über einen Datumsbereich.
+- `find_cheapest_dates` (falls vorhanden) liefert für eine Strecke die günstigsten Reisedaten in einem Monat \
+(Google Travel Explore). Kostet eine Suche je Abflughafen, ersetzt aber viele Einzelsuchen. Nutze es, wenn \
+der Reisewunsch nur einen Zeitraum nennt ("im März", "irgendwann im Frühjahr"), und prüfe die besten Daten \
+danach mit `search_flights` (dort gibt es Details und weitere Quellen).
 
 ## Spar-Strategien (je nach Präferenzen einsetzen)
-1. Flexible Daten: innerhalb der erlaubten ±Tage die aussichtsreichsten Termine (Di/Mi/Sa oft günstiger als Fr/So). \
+1. Flexible Daten: bei offenem Zeitraum erst `find_cheapest_dates`, sonst innerhalb der erlaubten ±Tage die aussichtsreichsten Termine (Di/Mi/Sa oft günstiger als Fr/So). \
 Preis-Insights "high" sind ein Signal, andere Daten zu testen.
 2. Alternative Flughäfen: Nutze die Liste "Flughäfen in Fahrweite" aus dem Profil (falls vorhanden) und bündle sie \
 in einer Suche. Die Anreisekosten fließen in den Gesamtpreis ein. Am Ziel ebenso (Mailand MXP/BGY/LIN, London LHR/LGW/STN/LTN, Paris CDG/ORY/BVA, New York JFK/EWR).
@@ -64,16 +76,24 @@ in einer Suche. Die Anreisekosten fließen in den Gesamtpreis ein. Am Ziel ebens
 4. Positionierung (Langstrecke): Abflug ab einem anderen europäischen Hub (AMS, BRU, CPH, OSL, MAD, LIS, MXP, \
 IST …) ist oft deutlich günstiger. Preis für die Anreise (günstiger Zubringerflug oder Bahn) addieren und Puffer \
 einplanen, da getrennte Tickets.
-5. Gabelflüge (Open Jaw): Hin nach A, zurück ab B, wenn das zur Reise passt.
+5. Gabelflüge (Open Jaw): Hin nach A, zurück ab B (`return_from`) oder zurück zu einem anderen Heimatflughafen \
+(`return_to`), in EINER Suche und mit EINEM Ticket. Passt zu Rundreisen und oft günstiger als zwei One-Ways. \
+Rückkehr zu einem anderen Heimatflughafen nur, wenn die Anreise dort per Taxi läuft (geparktes Auto steht am \
+Abflughafen).
 6. Anderer Markt (nur wenn erlaubt): denselben Flug mit point_of_sale eines anderen Landes prüfen. Bei Zahlung \
 in Fremdwährung das Auslandseinsatzentgelt der Karte einrechnen. Ergebnis als Experiment kennzeichnen.
 7. Gesamtkosten statt Lockpreis: Gepäck laut Präferenzen, Anreise und Parken, Übernachtungen. Optionen enthalten \
 dafür `ground_eur` (Anreise + Parken ab dem Heimatflughafen, Schätzung) und `total_eur` (Flug + Anreise). \
 Vergleiche Abflughäfen immer über `total_eur`: Ein Flug ab AMS, der 60 € günstiger ist, aber 95 € Parken kostet, \
-ist teurer als ab DTM per Taxi. Bei zwei One-Ways das Parken über die Gesamtdauer aus der Tabelle im Profil nehmen.
+ist teurer als ab DTM per Taxi. Bei zwei One-Ways das Parken über die Gesamtdauer aus der Tabelle im Profil nehmen. \
+`bags_eur` ist geschätztes Aufgabegepäck bei Low-Cost-Airlines und bereits in `total_eur` enthalten.
 8. Meilen: Wenn ein Barpreis hoch ist (Langstrecke, Premium-Kabinen, Last-Minute), Prämienflüge prüfen und den \
 Gegenwert in Cent pro Meile berechnen. Amex-Punkte vorher übertragen zu müssen ist ein Schritt mit Wartezeit; \
-Transfers sind endgültig.
+Transfers sind endgültig. Nutze die Sweet Spots und Transferkurse aus dem Profil, inklusive aktiver Transfer-Boni.
+9. Preisverlauf: `history` ordnet einen Preis gegen frühere eigene Beobachtungen ein. "sehr gut" heißt: eher \
+jetzt buchen; "teuer" heißt: andere Daten oder einen Preisalarm vorschlagen.
+10. Guthaben: Reiseguthaben aus dem Profil nur anrechnen, wenn die Buchung über den genannten Weg möglich ist, \
+und das in der Begründung sagen.
 
 ## Fakten, die du kennst (bei passender Gelegenheit kurz erwähnen, nicht belehren)
 - Geräte-Mythos (iPhone/Mac teurer als Android): Studien (Northeastern 2014) fanden nur vereinzelte, kleine \
@@ -116,6 +136,8 @@ class AgentRun:
         profile: Profile | None = None,
         client: anthropic.Anthropic | None = None,
         knowledge: str = "",
+        explore: ExploreProvider | None = None,
+        price_history: history.PriceHistory | None = None,
     ):
         self.settings = settings
         self.providers = providers
@@ -125,9 +147,12 @@ class AgentRun:
         self.ground = ground_calculator(self.profile, self.prefs.max_ground_travel_h)
         self.client = client
         self.knowledge = knowledge  # freigegebene Community-Tipps
+        self.explore = explore
+        self.price_history = price_history
         self.max_searches = settings.max_searches
         self.searches: list[list[SearchResult]] = []  # pro Tool-Aufruf eine Liste (eine je Quelle)
         self.award_searches: list[dict] = []
+        self.date_hints: list[dict] = []
         self.options: dict[str, FlightOption] = {}
         self.awards: dict[str, AwardOption] = {}
         self.picks: list[dict] = []
@@ -143,6 +168,8 @@ class AgentRun:
             return_date: str = "",
             stops: Literal["any", "nonstop", "max1", "max2"] = "any",
             point_of_sale: str = "de",
+            return_from: str = "",
+            return_to: str = "",
         ) -> str:
             """Sucht Flüge in allen konfigurierten Quellen. Personen, Kabine und Gepäck kommen aus den Präferenzen.
 
@@ -153,9 +180,26 @@ class AgentRun:
                 return_date: Rückflugdatum YYYY-MM-DD. Leer lassen für One-Way.
                 stops: Umstiegsfilter an der Quelle: any, nonstop, max1 oder max2.
                 point_of_sale: Zweistelliger Ländercode des Marktes, aus dem gesucht wird (Standard "de"). Andere Märkte nur, wenn die Präferenzen es erlauben.
+                return_from: Gabelflug: kommagetrennte IATA-Codes, ab denen der Rückflug startet (leer = Zielflughäfen). Braucht return_date.
+                return_to: Gabelflug: kommagetrennte IATA-Codes, an denen der Rückflug endet (leer = Abflughäfen). Braucht return_date.
             """
             return run.do_search(origins=origins, destinations=destinations, outbound_date=outbound_date,
-                                 return_date=return_date, stops=stops, point_of_sale=point_of_sale)
+                                 return_date=return_date, stops=stops, point_of_sale=point_of_sale,
+                                 return_from=return_from, return_to=return_to)
+
+        @beta_tool
+        def find_cheapest_dates(origins: str, destination: str, month: int = 0,
+                                trip_length: Literal["weekend", "week", "two_weeks", "one_way"] = "week") -> str:
+            """Findet die günstigsten Reisedaten einer Strecke in einem Monat (Google Travel Explore). Kostet eine Suche je Abflughafen (höchstens 3).
+
+            Args:
+                origins: Kommagetrennte IATA-Codes der Abflughäfen (höchstens 3 werden abgefragt).
+                destination: Ein IATA-Code des Ziels.
+                month: Monat 1-12 innerhalb der nächsten 6 Monate, 0 = nächste 6 Monate.
+                trip_length: Reisedauer: weekend, week, two_weeks oder one_way.
+            """
+            return run.do_cheapest_dates(origins=origins, destination=destination, month=month,
+                                         trip_length=trip_length)
 
         @beta_tool
         def search_award_space(origins: str, destinations: str, start_date: str, end_date: str) -> str:
@@ -180,6 +224,8 @@ class AgentRun:
             return run.do_recommend(picks)
 
         self.tools = [search_flights, recommend_options]
+        if explore is not None:
+            self.tools.insert(1, find_cheapest_dates)
         if award_provider is not None and self.prefs.consider_miles:
             self.tools.insert(1, search_award_space)
 
@@ -205,21 +251,34 @@ class AgentRun:
                 travel_class=p.cabin,
                 currency=self.settings.currency,
                 point_of_sale=pos,
+                return_from=_codes(kw["return_from"]) if kw.get("return_from") else [],
+                return_to=_codes(kw["return_to"]) if kw.get("return_to") else [],
             )
         except (ValueError, KeyError) as exc:
             return _err(f"Ungültige Suchparameter: {exc}")
         if q.return_date and q.return_date < q.outbound_date:
             return _err("Rückflugdatum liegt vor dem Hinflugdatum.")
+        if (q.return_from or q.return_to) and not q.return_date:
+            return _err("Gabelflug (return_from/return_to) braucht ein return_date.")
 
         sid = f"S{len(self.searches) + 1}"
         self.events.append({"type": "search_started", "search_id": sid, "label": q.label()})
         providers = [pr for pr in self.providers if pos == "de" or pr.name != "duffel"]  # Duffel kennt keinen Markt
         results = [pr.search(q, sid + _SUFFIX.get(pr.name, "")) for pr in providers]
+        legs = 2 if q.return_date else 1
         for r in results:
+            if self.price_history is not None and not r.demo:
+                self.price_history.record(history.entries_for(q, r.options))
             r.options, r.filtered_out = filters.apply(r.options, p)
+            if self.price_history is not None:
+                history.annotate(self.price_history, q, r.options)
             for o in r.options:
                 end = o.return_segments[-1].arrival if o.return_segments else q.return_date
                 o.ground = self.ground.cost(o.segments[0].from_airport, trip_days(q.outbound_date, end))
+                if r.source != "duffel":  # Duffel nennt das enthaltene Gepäck selbst
+                    est = baggage.estimate(o.airlines, p.checked_bags, p.adults, legs)
+                    if est:
+                        o.bags_eur, o.bags_note = est
             for opt in r.options:
                 self.options[opt.id] = opt
         self.searches.append(results)
@@ -250,6 +309,55 @@ class AgentRun:
         }
         return json.dumps(payload, ensure_ascii=False)
 
+    def do_cheapest_dates(self, **kw) -> str:
+        if self.explore is None:
+            return _err("Datums-Suche nicht verfügbar (braucht SERPAPI_API_KEY).")
+        try:
+            origins = _codes(kw["origins"])[:3]
+            dest = _codes(kw["destination"])[0]
+            month = int(kw.get("month") or 0)
+            if not 0 <= month <= 12:
+                raise ValueError("month muss 0-12 sein")
+        except (ValueError, KeyError) as exc:
+            return _err(f"Ungültige Parameter: {exc}")
+        left = self.max_searches - len(self.searches)
+        if left <= 0:
+            return _err(f"Suchbudget ({self.max_searches}) aufgebraucht.")
+        origins = origins[:left]
+        length = kw.get("trip_length") or "week"
+        one_way = length == "one_way"
+        sid = f"S{len(self.searches) + 1}"
+        label = f"Günstigste Daten {','.join(origins)} → {dest}" + (f", Monat {month}" if month else ", nächste 6 Monate")
+        self.events.append({"type": "search_started", "search_id": sid, "label": label})
+        found, errors = [], []
+        for o in origins:
+            rows, err = self.explore.cheapest_dates(o, dest, month, _DURATION.get(length, 2), self.prefs.adults,
+                                                    self.prefs.cabin, one_way, self.settings.currency)
+            if err:
+                errors.append(f"{o}: {err}")
+            found += [r for r in rows if not r["destination"] or r["destination"] == dest] or rows[:3]
+        # Kontingent: eine Suche je Abflughafen; leere Platzhalter halten die Zählung konsistent
+        self.searches += [[] for _ in origins]
+        found.sort(key=lambda r: r["price"])
+        for r in found:
+            g = self.ground.cost(r["origin"], trip_days(r["outbound"], r.get("inbound")))
+            if g is not None:
+                r["ground_eur"] = g.total
+                r["total_eur"] = round(r["price"] + g.total)
+        self.date_hints.append({"search_id": sid, "label": label, "results": found[:8]})
+        self.events.append({"type": "search_done", "search_id": sid, "label": label, "count": len(found),
+                            "cheapest": found[0]["price"] if found else None, "currency": self.settings.currency,
+                            "error": "; ".join(errors) or None, "cached": False, "filtered_out": 0})
+        keep = ("origin", "destination", "outbound", "inbound", "price", "airline", "stops", "ground_eur", "total_eur")
+        return json.dumps({
+            "search_id": sid,
+            "hint": "Preise aus Google Travel Explore (Gesamtpreis für alle Reisenden). Beste Daten mit "
+                    "search_flights bestätigen, bevor du sie empfiehlst; nur dort gibt es Options-IDs.",
+            "error": "; ".join(errors) or None,
+            "dates": [{k: r[k] for k in keep if r.get(k) is not None} for r in found[:8]],
+            "searches_left": self.max_searches - len(self.searches),
+        }, ensure_ascii=False)
+
     def do_award_search(self, **kw) -> str:
         if self.award_provider is None:
             return _err("Keine Prämienflug-Quelle konfiguriert.")
@@ -276,10 +384,12 @@ class AgentRun:
             "search_id": sid,
             "error": error,
             "hint": "Preise pro Person und Richtung. program = Programm, über das gebucht wird. "
-                    "user_program = passendes Konto im Profil (falls vorhanden).",
+                    "user_program = passendes Konto im Profil, user_balance = Stand, reachable = Stand plus "
+                    "per Amex-Transfer erreichbar (inkl. aktiver Boni).",
             "awards": [
-                {**a.compact(), "user_program": SEATS_AERO_SOURCE_TO_PROGRAM.get(a.program),
-                 "user_balance": balances.get(SEATS_AERO_SOURCE_TO_PROGRAM.get(a.program, ""), None)}
+                {**a.compact(), "user_program": (up := SEATS_AERO_SOURCE_TO_PROGRAM.get(a.program)),
+                 "user_balance": balances.get(up or "", None),
+                 "reachable": reachable_miles(self.profile, up) if up else None}
                 for a in awards
             ],
         }, ensure_ascii=False)
@@ -306,6 +416,7 @@ class AgentRun:
     def user_message(self, request: str, today: date) -> str:
         sources = ", ".join(pr.name for pr in self.providers)
         award = "ja (seats.aero)" if any(t.name == "search_award_space" for t in self.tools) else "nein"
+        credits = credits_brief(self.profile)
         return (
             f"Heute ist {today.isoformat()} ({_WEEKDAYS[today.weekday()]}). Währung: {self.settings.currency}.\n"
             f"Suchbudget: {self.max_searches} Flugsuchen. Quellen: {sources}. Prämienflug-Suche: {award}.\n\n"
@@ -313,7 +424,8 @@ class AgentRun:
             f"## Profil\nHeimatflughafen(s): {self.profile.home_airports}\n"
             + self.radius_brief()
             + f"Zahlungskarte: {self.profile.card} (Auslandseinsatzentgelt {self.profile.card_fx_fee_pct} %)\n"
-            + (loyalty_brief(self.profile) if self.prefs.consider_miles else "Meilen: nicht berücksichtigen.")
+            + (loyalty_brief(self.profile, today) if self.prefs.consider_miles else "Meilen: nicht berücksichtigen.")
+            + (f"\n{credits}" if credits else "")
             + (f"\nNotizen: {self.profile.notes}" if self.profile.notes else "")
             + (f"\n\n{self.knowledge}" if self.knowledge else "")
             + f"\n\n## Reisewunsch\n{request.strip()}"
@@ -342,7 +454,7 @@ class AgentRun:
             tools=self.tools,
             messages=[{"role": "user", "content": self.user_message(request, today)}],
             output_config={"effort": self.settings.claude_effort},
-            max_iterations=self.max_searches + MAX_AWARD_SEARCHES + 6,
+            max_iterations=self.max_searches + MAX_AWARD_SEARCHES + 6,  # Datums-Suchen zählen ins Suchbudget
             # Bei einer (seltenen) Ablehnung durch Sicherheitsfilter automatisch auf ein passendes Modell ausweichen.
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
@@ -395,11 +507,16 @@ class AgentRun:
                     cpm = cents_per_mile(cash, entry["total_miles"], entry["total_taxes"] or 0)
                     entry["cents_per_mile"] = cpm
                     entry["miles_worth_it"] = cpm is not None and cpm >= self.profile.min_value_cent_per_mile
+            bags = round(sum(o.bags_eur or 0 for o in opts))
+            if bags:
+                entry["bags_eur"] = bags
             g = self.pick_ground(opts)
             if g is not None:
                 entry["ground"] = g.model_dump()
                 if entry["total_price"] is not None and g.days is not None:
-                    entry["total_with_ground"] = round(entry["total_price"] + g.total)
+                    entry["total_with_ground"] = round(entry["total_price"] + g.total + bags)
+            elif bags and entry["total_price"] is not None:
+                entry["total_with_ground"] = round(entry["total_price"] + bags)
             picks.append(entry)
         all_opts = sorted(self.options.values(), key=lambda o: (o.price is None, o.price or 0))
         return {
@@ -413,7 +530,9 @@ class AgentRun:
                  "url": r.google_flights_url, "error": r.error, "cached": r.cached, "filtered_out": r.filtered_out,
                  "insights": r.insights.model_dump() if r.insights else None}
                 for group in self.searches for r in group
-            ] + [{**a, "source": "seats_aero"} for a in self.award_searches],
+            ] + [{**a, "source": "seats_aero"} for a in self.award_searches]
+              + [{"search_id": d["search_id"], "source": "explore", "label": d["label"], "count": len(d["results"]),
+                  "dates": d["results"]} for d in self.date_hints],
             "prefs": self.prefs.model_dump(),
             "min_value_cent_per_mile": self.profile.min_value_cent_per_mile,
             "demo": any(r.demo for group in self.searches for r in group) or any(a.demo for a in self.awards.values()),

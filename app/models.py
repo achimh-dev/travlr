@@ -21,6 +21,9 @@ class SearchQuery(BaseModel):
     destinations: list[str] = Field(description="IATA-Codes der Zielflughäfen")
     outbound_date: str  # YYYY-MM-DD
     return_date: str | None = None  # None = One-Way
+    # Gabelflug (Open Jaw): Rückflug ab/nach anderen Flughäfen. Leer = wie Hinflug umgekehrt.
+    return_from: list[str] = []
+    return_to: list[str] = []
     adults: int = 1
     carry_on_bags: int = 0
     stops: StopsFilter = "any"
@@ -29,11 +32,27 @@ class SearchQuery(BaseModel):
     point_of_sale: str = "de"  # Land, aus dem "gebucht" wird (Google-Flights-Parameter gl)
 
     @property
+    def open_jaw(self) -> bool:
+        return bool(self.return_date and (self.return_from or self.return_to))
+
+    @property
     def trip_type(self) -> str:
+        if self.open_jaw:
+            return "open_jaw"
         return "round_trip" if self.return_date else "one_way"
+
+    @property
+    def return_origins(self) -> list[str]:
+        return self.return_from or self.destinations
+
+    @property
+    def return_destinations(self) -> list[str]:
+        return self.return_to or self.origins
 
     def label(self) -> str:
         route = f"{','.join(self.origins)} → {','.join(self.destinations)}"
+        if self.open_jaw:
+            route += f", zurück {','.join(self.return_origins)} → {','.join(self.return_destinations)}"
         dates = self.outbound_date + (f" / zurück {self.return_date}" if self.return_date else " (one-way)")
         pos = f" [Markt {self.point_of_sale.upper()}]" if self.point_of_sale != "de" else ""
         return f"{route}, {dates}{pos}"
@@ -82,6 +101,9 @@ class FlightOption(BaseModel):
     fare_brand: str | None = None  # z. B. "Economy Light" (Duffel)
     baggage_note: str | None = None
     ground: GroundCost | None = None  # Anreise + Parken ab Heimatflughafen (Schätzung)
+    bags_eur: float | None = None  # geschätzte Kosten für Aufgabegepäck (Low-Cost), alle Reisenden/Strecken
+    bags_note: str | None = None
+    history_note: str | None = None  # Einordnung gegen eigene Preisbeobachtungen
     demo: bool = False
 
     @property
@@ -122,11 +144,17 @@ class FlightOption(BaseModel):
             d["return_route"] = route(self.return_segments)
             d["return_dep"] = self.return_segments[0].departure
             d["return_layovers"] = [_lay(l) for l in self.return_layovers]
+        if self.bags_eur:
+            d["bags_eur"] = self.bags_eur
         if self.ground:
             d["ground_eur"] = self.ground.total
             d["ground"] = self.ground.note
             if self.price is not None and self.ground.days is not None:
-                d["total_eur"] = round(self.price + self.ground.total)
+                d["total_eur"] = round(self.price + self.ground.total + (self.bags_eur or 0))
+        elif self.bags_eur and self.price is not None:
+            d["total_eur"] = round(self.price + self.bags_eur)
+        if self.history_note:
+            d["history"] = self.history_note
         if self.fare_brand:
             d["fare"] = self.fare_brand
         if self.baggage_note:
@@ -221,6 +249,21 @@ class Preferences(BaseModel):
     notes: str = ""  # Freitext, z. B. "nie mit Ryanair"
 
 
+class TransferBonus(BaseModel):
+    program: str  # Schlüssel aus loyalty.PROGRAMS
+    bonus_pct: float = Field(gt=0, le=200)
+    valid_until: str | None = None  # YYYY-MM-DD
+    note: str = ""
+    link: str = ""
+
+
+class TravelCredit(BaseModel):
+    name: str  # z. B. "Amex Platinum Reiseguthaben"
+    amount_eur: float = Field(ge=0)
+    condition: str = ""  # z. B. "nur bei Buchung über Amex Travel"
+    valid_until: str | None = None
+
+
 class LoyaltyAccount(BaseModel):
     program: str  # Schlüssel aus loyalty.PROGRAMS
     balance: int = 0
@@ -248,4 +291,6 @@ class Profile(BaseModel):
     card: str = "Amex Platinum"
     card_fx_fee_pct: float = 2.0  # Auslandseinsatzentgelt bei Zahlung in Fremdwährung
     min_value_cent_per_mile: float = 1.5  # ab diesem Gegenwert lohnt sich Meileneinsatz für dich
+    transfer_bonuses: list[TransferBonus] = []  # aktuelle Aktionen (z. B. +30 % auf Flying Blue)
+    credits: list[TravelCredit] = []  # Reiseguthaben, Gutscheine
     notes: str = ""

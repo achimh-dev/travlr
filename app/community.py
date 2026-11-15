@@ -68,10 +68,20 @@ class DigestTip(BaseModel):
     link: str
 
 
+class DigestBonus(BaseModel):
+    program: str = Field(description="Programm-Schlüssel: flying_blue, ba_club, iberia_club, qatar_privilege, "
+                                     "sas_eurobonus, krisflyer, asia_miles, delta_skymiles, emirates_skywards")
+    bonus_pct: float = Field(description="Bonus in Prozent, z. B. 30 für +30 %")
+    valid_until: str | None = Field(default=None, description="Letzter Tag YYYY-MM-DD, falls genannt")
+    note: str = Field(default="", description="Bedingungen in einem Satz")
+    link: str
+
+
 class DigestContent(BaseModel):
     summary: str = Field(description="2-4 Sätze Überblick auf Deutsch")
     deals: list[DigestDeal]
     tips: list[DigestTip]
+    transfer_bonuses: list[DigestBonus] = []
 
 
 class Tip(BaseModel):
@@ -233,6 +243,9 @@ die besten zuerst. Abgelaufene Deals weglassen.
 - tips: neue oder wiederkehrende Spartricks, Buchungstaktiken, Änderungen bei Meilenprogrammen \
 (z. B. Transfer-Boni, Abwertungen, neue Partner). Höchstens 8. Nichts, was gegen Gesetze verstößt; \
 Grauzonen (z. B. Hidden City) nur mit klarem Risiko-Hinweis.
+- transfer_bonuses: laufende Aktionen mit Extra-Meilen beim Übertragen von Amex Membership Rewards \
+**in Deutschland** zu einem der genannten Programme. Nur mit klarer Prozentangabe, nur aktuelle, keine aus \
+anderen Ländern (z. B. US-Amex).
 - Nur Links aus den Beiträgen verwenden, nichts erfinden. Wenn nichts Relevantes dabei ist, leere Listen."""
 
 
@@ -269,7 +282,8 @@ def run_digest(settings: Settings, store: CommunityStore, context: str, client=N
         except Exception as exc:  # noqa: BLE001 – z. B. fehlender API-Key; Fehler im Digest anzeigen
             digest.error = str(exc)[:300]
     else:
-        digest.content = DigestContent(summary="Keine neuen Beiträge in den aktiven Feeds.", deals=[], tips=[])
+        digest.content = DigestContent(summary="Keine neuen Beiträge in den aktiven Feeds.", deals=[], tips=[],
+                                       transfer_bonuses=[])
     store.add_digest(digest)
     return digest
 

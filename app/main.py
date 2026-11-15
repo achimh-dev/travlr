@@ -26,13 +26,14 @@ from .agent import AgentRun, AwardProvider, FlightProvider
 from .config import Settings, get_settings
 from .geo import airport_choices, geocode
 from .ground import default_mode, default_taxi_cost, parking_table
-from .loyalty import MR_TRANSFERS, PROGRAMS
-from .models import Preferences, Profile
-from .providers.demo import DemoProvider
+from .history import PriceHistory
+from .loyalty import MR_HOTEL_TRANSFERS, MR_TRANSFERS, PROGRAMS, STAND, SWEET_SPOTS
+from .models import Preferences, Profile, TransferBonus
+from .providers.demo import DemoExplore, DemoProvider
 from .providers.duffel import DuffelProvider
 from .providers.seats_aero import DemoAwardProvider, SeatsAeroProvider
 from .providers.serpapi import SerpApiProvider
-from .watches import Watch, WatchStore
+from .watches import ExploreClient, Watch, WatchStore
 
 log = logging.getLogger("travlr")
 STATIC = Path(__file__).parent / "static"
@@ -178,6 +179,14 @@ def make_providers(settings: Settings) -> tuple[list[FlightProvider], AwardProvi
     return providers, award
 
 
+def make_explore(settings: Settings):
+    if settings.demo_mode:
+        return DemoExplore()
+    if settings.serpapi_api_key:
+        return ExploreClient(settings.serpapi_api_key, settings.cache_dir, settings.cache_ttl_hours)
+    return None
+
+
 @app.get("/api/config")
 def config() -> dict:
     s = get_settings()
@@ -194,6 +203,9 @@ def config() -> dict:
         "login": bool(s.app_password),
         "programs": {k: v["name"] for k, v in PROGRAMS.items()},
         "mr_transfers": MR_TRANSFERS,
+        "mr_hotel_transfers": MR_HOTEL_TRANSFERS,
+        "sweet_spots": SWEET_SPOTS,
+        "loyalty_stand": STAND,
     }
 
 
@@ -219,6 +231,18 @@ def put_profile(profile: Profile) -> Profile:
         profile.home_lat = profile.home_lon = None
     profile_store.save(s.data_dir, profile)
     return profile
+
+
+@app.post("/api/profile/bonuses")
+def add_bonus(bonus: TransferBonus) -> Profile:
+    """Transfer-Bonus übernehmen (z. B. aus dem Community-Digest). Ersetzt einen Bonus desselben Programms."""
+    if bonus.program not in MR_TRANSFERS:
+        raise HTTPException(422, f"Unbekanntes Programm '{bonus.program}'.")
+    s = get_settings()
+    p = profile_store.load(s.data_dir, s.home_airports)
+    p.transfer_bonuses = [b for b in p.transfer_bonuses if b.program != bonus.program] + [bonus]
+    profile_store.save(s.data_dir, p)
+    return p
 
 
 @app.get("/api/nearby")
@@ -248,7 +272,8 @@ def search(req: SearchRequest) -> StreamingResponse:
     profile = profile_store.load(settings.data_dir, settings.home_airports)
     tips = community.CommunityStore(settings.data_dir).tips()
     run = AgentRun(settings, providers, award_provider=award, prefs=req.prefs, profile=profile,
-                   knowledge=community.tips_brief(tips))
+                   knowledge=community.tips_brief(tips), explore=make_explore(settings),
+                   price_history=PriceHistory(settings.data_dir))
     if req.max_searches:
         run.max_searches = req.max_searches
 
@@ -292,8 +317,8 @@ def list_watches() -> list[dict]:
 
 @app.post("/api/watches")
 def save_watch(w: Watch) -> Watch:
-    if w.kind == "route" and not w.destinations.strip():
-        raise HTTPException(422, "Für einen Route-Alarm bitte Ziel-Flughäfen angeben.")
+    if w.kind in ("route", "award") and not w.destinations.strip():
+        raise HTTPException(422, "Für diesen Alarm bitte Ziel-Flughäfen angeben.")
     if w.nights_max < w.nights_min:
         raise HTTPException(422, "Maximale Nächte muss ≥ minimale Nächte sein.")
     store = WatchStore(get_settings().data_dir)

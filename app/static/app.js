@@ -14,8 +14,8 @@ const fmtTime = (t) => {
   const [, mo, da] = d.split("-");
   return `${da}.${mo}. ${hm ?? ""}`.trim();
 };
-const tripLabel = (t) => (t === "round_trip" ? "Hin/Rück" : "One-Way");
-const SOURCE = { google_flights: "Google Flights", duffel: "Duffel", demo: "Demo", seats_aero: "seats.aero" };
+const tripLabel = (t) => ({ round_trip: "Hin/Rück", open_jaw: "Gabelflug" }[t] || "One-Way");
+const SOURCE = { google_flights: "Google Flights", duffel: "Duffel", demo: "Demo", seats_aero: "seats.aero", explore: "Günstigste Daten" };
 const route = (segs) => (segs?.length ? [segs[0].from_airport, ...segs.map((s) => s.to_airport)].join(" → ") : "");
 let CONFIG = { programs: {}, mr_transfers: {} };
 
@@ -93,9 +93,32 @@ async function loadProfile() {
       <td><input class="status" value="${esc(byProg[key]?.status ?? "")}" placeholder="–"></td>
     </tr>`).join("");
   const t = CONFIG.mr_transfers;
-  $("#transfers").textContent = "Amex-MR-Transfers (DE, Stand Nov. 2026, vor Transfer in der Amex-App prüfen): " +
-    Object.entries(t).map(([k, v]) => `${CONFIG.programs[k] || k} ${v.mr}:${v.miles}${v.via ? " via Payback" : ""}`).join(" · ");
+  $("#transfers").textContent = `Amex-MR-Transfers (DE, Stand ${CONFIG.loyalty_stand}, vor Transfer in der Amex-App prüfen): ` +
+    Object.entries(t).map(([k, v]) => `${CONFIG.programs[k] || k} ${v.mr}:${v.miles}${v.via ? " via Payback" : ""}`).join(" · ") +
+    " · Hotels: " + Object.entries(CONFIG.mr_hotel_transfers || {}).map(([k, v]) => `${k} ${v.mr}:${v.miles}`).join(" · ");
+  PROFILE_BONUSES = p.transfer_bonuses || [];
+  $("#bonuses").innerHTML = PROFILE_BONUSES.map(bonusRow).join("");
+  $("#credits").innerHTML = (p.credits || []).map(creditRow).join("");
+  $("#sweet_spots").innerHTML = (CONFIG.sweet_spots || []).map((x) => `<li><strong>${esc(x.title)}</strong> <span class="src">${esc(CONFIG.programs[x.program] || x.program)}</span><br>${esc(x.detail)}${x.caveat ? `<br><span class="fine">Haken: ${esc(x.caveat)}</span>` : ""}</li>`).join("");
 }
+
+let PROFILE_BONUSES = [];
+const bonusRow = (b) => `<tr>
+  <td><select class="b_prog">${Object.keys(CONFIG.mr_transfers).filter((k) => k !== "miles_and_more").map((k) => `<option value="${esc(k)}" ${k === b.program ? "selected" : ""}>${esc(CONFIG.programs[k] || k)}</option>`).join("")}</select></td>
+  <td><input class="b_pct" type="number" min="1" max="200" value="${esc(b.bonus_pct ?? "")}"></td>
+  <td><input class="b_until" type="date" value="${esc(b.valid_until || "")}"></td>
+  <td><button type="button" class="copy row_del">✕</button><input type="hidden" class="b_note" value="${esc(b.note || "")}"><input type="hidden" class="b_link" value="${esc(b.link || "")}"></td></tr>`;
+const creditRow = (c) => `<tr>
+  <td><input class="c_name" value="${esc(c.name || "")}" placeholder="z. B. Reiseguthaben Karte"></td>
+  <td><input class="c_amount" type="number" min="0" step="1" value="${esc(c.amount_eur ?? "")}"></td>
+  <td><input class="c_cond" value="${esc(c.condition || "")}" placeholder="z. B. nur über das Reiseportal der Karte"></td>
+  <td><input class="c_until" type="date" value="${esc(c.valid_until || "")}"></td>
+  <td><button type="button" class="copy row_del">✕</button></td></tr>`;
+document.addEventListener("click", (ev) => { if (ev.target.classList.contains("row_del")) ev.target.closest("tr").remove(); });
+document.addEventListener("click", (ev) => {
+  if (ev.target.id === "add_bonus") $("#bonuses").insertAdjacentHTML("beforeend", bonusRow({ program: "flying_blue" }));
+  if (ev.target.id === "add_credit") $("#credits").insertAdjacentHTML("beforeend", creditRow({}));
+});
 
 async function saveProfile() {
   const accounts = [...document.querySelectorAll("#accounts tr")].map((tr) => ({
@@ -115,10 +138,19 @@ async function saveProfile() {
     card_fx_fee_pct: Number($("#card_fx_fee_pct").value || 0),
     min_value_cent_per_mile: Number($("#min_value").value || 0),
     notes: $("#profile_notes").value,
+    transfer_bonuses: [...document.querySelectorAll("#bonuses tr")].map((tr) => ({
+      program: tr.querySelector(".b_prog").value, bonus_pct: Number(tr.querySelector(".b_pct").value || 0),
+      valid_until: tr.querySelector(".b_until").value || null, note: tr.querySelector(".b_note").value,
+      link: tr.querySelector(".b_link").value,
+    })).filter((b) => b.bonus_pct > 0),
+    credits: [...document.querySelectorAll("#credits tr")].map((tr) => ({
+      name: tr.querySelector(".c_name").value.trim(), amount_eur: Number(tr.querySelector(".c_amount").value || 0),
+      condition: tr.querySelector(".c_cond").value.trim(), valid_until: tr.querySelector(".c_until").value || null,
+    })).filter((c) => c.name),
   };
   const r = await fetch("/api/profile", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   $("#profile_msg").textContent = r.ok ? "Gespeichert ✓" : `Fehler: ${(await r.json().catch(() => ({}))).detail || r.status}`;
-  if (r.ok) loadNearby();
+  if (r.ok) { loadNearby(); PROFILE_BONUSES = body.transfer_bonuses; }
   setTimeout(() => ($("#profile_msg").textContent = ""), 3000);
 }
 
@@ -211,12 +243,14 @@ function legHtml(o) {
   };
   const notes = [...new Set(o.segments.flatMap((s) => s.extensions).concat(o.extensions))].filter((e) => /gepäck|bag|carry|verspät|delayed/i.test(e));
   if (o.baggage_note) notes.push(o.baggage_note);
+  if (o.bags_note) notes.push(o.bags_note);
   const hasRet = o.return_segments?.length;
   return `<div class="leg">
     <div class="airline">${esc(o.airlines.join(", "))} · ${esc(tripLabel(o.trip_type))} <span class="src">${esc(SOURCE[o.source] || o.source)}${o.point_of_sale !== "de" ? ` · Markt ${esc(o.point_of_sale.toUpperCase())}` : ""}</span></div>
     ${block(hasRet ? "Hin" : "", o.segments, o.layovers, o.stops)}
     ${hasRet ? block("Rück", o.return_segments, o.return_layovers, o.return_layovers.length) : ""}
-    ${o.trip_type === "round_trip" && !hasRet ? '<div class="meta">Rückflug wählst du bei Google Flights (Preis gilt für beide Strecken).</div>' : ""}
+    ${["round_trip", "open_jaw"].includes(o.trip_type) && !hasRet ? '<div class="meta">Rückflug wählst du bei Google Flights (Preis gilt für beide Strecken).</div>' : ""}
+    ${o.history_note ? `<div class="meta">Preisverlauf: ${esc(o.history_note)}</div>` : ""}
     ${o.fare_brand ? `<div class="meta">Tarif: ${esc(o.fare_brand)}</div>` : ""}
     ${notes.length ? `<div class="chips">${notes.map((n) => `<span class="chip warn">${esc(n)}</span>`).join("")}</div>` : ""}
   </div>`;
@@ -279,7 +313,8 @@ function renderResult(r) {
                : `<div class="miles bad">Gegenwert nur ${Math.max(0, p.cents_per_mile).toLocaleString("de-DE")} ct pro Meile (unter deinen ${r.min_value_cent_per_mile} ct): bar zahlen lohnt eher</div>`) : ""}`
           : `<div class="price">${fmtPrice(p.total_price, cur)}</div>
              <div class="note">${esc(p.options.length > 1 ? "Summe der Einzeltickets" : p.options[0]?.price_note)}</div>
-             ${groundHtml(p.ground, p.total_with_ground, cur)}`;
+             ${p.ground ? groundHtml(p.ground, p.total_with_ground, cur) : p.total_with_ground != null ? `<div class="ground-total">Gesamt inkl. Gepäck: <strong>${fmtPrice(p.total_with_ground, cur)}</strong></div>` : ""}
+             ${p.bags_eur ? `<div class="fineprint">davon Aufgabegepäck geschätzt ${fmtPrice(p.bags_eur, cur)}</div>` : ""}`;
         return `<article class="pick">
           <div class="title">${esc(p.title)}</div>
           ${head}
@@ -300,7 +335,7 @@ function renderResult(r) {
   $("#all tbody").innerHTML = r.options.map((o) => `
     <tr class="${picked.has(o.id) ? "picked" : ""}">
       <td class="num">${o.booking_url ? `<a href="${esc(o.booking_url)}" target="_blank" rel="noopener">${fmtPrice(o.price, o.currency)}</a>` : fmtPrice(o.price, o.currency)}</td>
-      <td title="${esc(o.ground?.note || "")}">${o.ground && o.ground.days != null && o.price != null ? fmtPrice(o.price + o.ground.total, o.currency) : "–"}</td>
+      <td title="${esc([o.ground?.note, o.bags_note].filter(Boolean).join(" · "))}">${o.price != null && ((o.ground && o.ground.days != null) || o.bags_eur) ? fmtPrice(o.price + (o.ground?.days != null ? o.ground.total : 0) + (o.bags_eur || 0), o.currency) : "–"}</td>
       <td>${esc(SOURCE[o.source] || o.source)}${o.point_of_sale !== "de" ? ` (${esc(o.point_of_sale.toUpperCase())})` : ""}</td>
       <td>${esc(o.airlines.join(", "))}</td>
       <td>${esc(route(o.segments))}${o.return_segments?.length ? ` / ${esc(route(o.return_segments))}` : ""}</td>
@@ -324,7 +359,8 @@ function renderResult(r) {
     const range = ins?.typical_range ? ` (typisch ${ins.typical_range.map((v) => fmtPrice(v)).join("–")})` : "";
     const link = s.url ? ` · <a href="${esc(s.url)}" target="_blank" rel="noopener">Google Flights</a>` : "";
     const filt = s.filtered_out ? ` · ${s.filtered_out} aussortiert` : "";
-    return `<li><strong>${esc(s.search_id)}</strong> <span class="src">${esc(SOURCE[s.source] || s.source)}</span> ${esc(s.label)} · ${s.count} Treffer${filt}${s.cached ? " (Cache)" : ""}${level}${range}${link}${s.error ? ` · <span class="level-high">${esc(s.error)}</span>` : ""}</li>`;
+    const dates = s.dates?.length ? `<br><span class="fine">${s.dates.slice(0, 5).map((d) => `${esc(d.origin)} ${fmtDate(d.outbound)}${d.inbound ? "–" + fmtDate(d.inbound) : ""}: ${d.url ? `<a href="${esc(d.url)}" target="_blank" rel="noopener">${fmtPrice(d.price)}</a>` : fmtPrice(d.price)}`).join(" · ")}</span>` : "";
+    return `<li><strong>${esc(s.search_id)}</strong> <span class="src">${esc(SOURCE[s.source] || s.source)}</span> ${esc(s.label)} · ${s.count} Treffer${filt}${s.cached ? " (Cache)" : ""}${level}${range}${link}${s.error ? ` · <span class="level-high">${esc(s.error)}</span>` : ""}${dates}</li>`;
   }).join("");
 }
 
@@ -452,7 +488,32 @@ function sparkline(history, threshold) {
     <path d="${path}" class="spark-line"/></svg>`;
 }
 
+function awardWatchCard(w) {
+  const b = w.best;
+  const hit = b && b.price <= w.max_price;
+  const best = b
+    ? `<div class="price ${hit ? "good" : ""}">${fmtNum(b.price)} Meilen</div>
+       <div class="fineprint">${b.taxes != null ? `+ ${fmtPrice(b.taxes)} Steuern · ` : ""}über ${esc(b.program)}${b.seats ? ` · ${b.seats} Plätze` : ""}</div>
+       <div class="meta">${esc(b.origin)} → ${esc(b.destination)} · ${fmtDate(b.outbound)} · ${esc(b.airline || "")}</div>`
+    : `<div class="meta">Noch nichts gefunden.</div>`;
+  return `<article class="watch ${w.active ? "" : "inactive"}">
+    <div class="watch-head"><strong>${esc(w.name)}</strong><span class="src">Prämie ${esc(w.cabin)} · ${esc(w.origins_resolved.join(","))} → ${esc(w.destinations)}</span></div>
+    <div class="watch-body">
+      <div>${best}</div>
+      <div class="watch-side">${sparkline(w.history, w.max_price)}
+        <div class="meta">Schwelle ${fmtNum(w.max_price)} Meilen${w.best_ever ? ` · Bestwert ${fmtNum(w.best_ever.price)}` : ""}</div>
+        <div class="meta">${w.last_checked ? "geprüft " + new Date(w.last_checked).toLocaleString("de-DE", { dateStyle: "short", timeStyle: "short" }) : ""} · ~${w.searches_per_month} seats.aero-Abfragen/Monat</div>
+      </div>
+    </div>
+    ${w.last_error ? `<div class="meta level-high">${esc(w.last_error)}</div>` : ""}
+    <div class="row"><button type="button" class="secondary" data-act="check" data-id="${w.id}">Jetzt prüfen</button>
+      <button type="button" class="secondary" data-act="edit" data-id="${w.id}">Bearbeiten</button>
+      <button type="button" class="secondary" data-act="delete" data-id="${w.id}">Löschen</button></div>
+  </article>`;
+}
+
 function watchCard(w) {
+  if (w.kind === "award") return awardWatchCard(w);
   const b = w.best;
   const hit = b && b.price + (b.ground || 0) <= w.max_price;
   const what = w.kind === "radar" ? `Deal-Radar${w.destinations ? ": " + w.destinations : ": überall"}` : `${w.origins_resolved.join(",")} → ${w.destinations}`;
@@ -489,11 +550,17 @@ async function loadWatches() {
 function openWatchForm(kind, w) {
   const f = $("#watch_form");
   f.hidden = false;
-  $("#watch_form_title").textContent = (w ? "Bearbeiten: " : "Neu: ") + (kind === "radar" ? "Deal-Radar" : "Route-Alarm");
+  const award = kind === "award";
+  $("#watch_form_title").textContent = (w ? "Bearbeiten: " : "Neu: ") + ({ radar: "Deal-Radar", award: "Prämien-Alarm" }[kind] || "Route-Alarm");
   $("#w_kind").value = kind;
   $("#w_dest_label").textContent = kind === "radar" ? "Nur diese Länder/Ziele (optional)" : "Ziel-Flughäfen";
-  $("#w_destinations").placeholder = kind === "radar" ? "z. B. USA, Japan, BKK" : "JFK,EWR";
-  const v = w || { name: "", origins: "", destinations: "", max_price: "", adults: 1, date_from: "", date_to: "", nights_min: 5, nights_max: 9, cabin: "economy", stops: "any", samples_per_check: kind === "radar" ? 1 : 2, interval_hours: kind === "radar" ? 12 : 24, active: true, id: "" };
+  $("#w_destinations").placeholder = kind === "radar" ? "z. B. USA, Japan, BKK" : award ? "z. B. JFK,EWR,BOS" : "JFK,EWR";
+  $("#w_price_label").textContent = award ? "Alarm unter (Meilen pro Person und Richtung)" : "Alarm unter (€ inkl. Anreise/Parken)";
+  $("#w_date_from_label").textContent = award ? "Reisedatum frühestens" : "Hinflug frühestens";
+  $("#w_date_to_label").textContent = award ? "Reisedatum spätestens" : "Hinflug spätestens";
+  document.querySelectorAll("#watch_form .not-award").forEach((el) => (el.hidden = award));
+  $("#w_award_hint").hidden = !award;
+  const v = w || { name: "", origins: "", destinations: "", max_price: "", adults: 1, date_from: "", date_to: "", nights_min: 5, nights_max: 9, cabin: award ? "business" : "economy", stops: "any", samples_per_check: kind === "radar" ? 1 : 2, interval_hours: kind === "radar" ? 12 : award ? 12 : 24, active: true, id: "" };
   for (const [k, id] of [["id", "w_id"], ["name", "w_name"], ["origins", "w_origins"], ["destinations", "w_destinations"], ["max_price", "w_max_price"], ["adults", "w_adults"], ["date_from", "w_date_from"], ["date_to", "w_date_to"], ["nights_min", "w_nights_min"], ["nights_max", "w_nights_max"], ["cabin", "w_cabin"], ["stops", "w_stops"], ["samples_per_check", "w_samples"], ["interval_hours", "w_interval"]]) $("#" + id).value = v[k] ?? "";
   $("#w_active").checked = v.active !== false;
   updateUsage();
@@ -501,8 +568,12 @@ function openWatchForm(kind, w) {
 }
 
 function updateUsage() {
-  const n = Math.round(Number($("#w_samples").value || 1) * 24 / Number($("#w_interval").value || 24) * 30);
-  $("#w_usage").textContent = `Verbraucht ca. ${n} Flugsuchen pro Monat.`;
+  const per = 24 / Number($("#w_interval").value || 24) * 30;
+  if ($("#w_kind").value === "award") {
+    $("#w_usage").textContent = `Verbraucht ca. ${Math.round(per)} seats.aero-Abfragen pro Monat (keine Flugsuchen).`;
+    return;
+  }
+  $("#w_usage").textContent = `Verbraucht ca. ${Math.round(Number($("#w_samples").value || 1) * per)} Flugsuchen pro Monat.`;
 }
 ["#w_samples", "#w_interval"].forEach((s) => $(s).addEventListener("input", updateUsage));
 
@@ -510,7 +581,7 @@ $("#watch_form").addEventListener("submit", async (ev) => {
   ev.preventDefault();
   const body = {
     kind: $("#w_kind").value, name: $("#w_name").value, origins: $("#w_origins").value.toUpperCase().replace(/\s/g, ""),
-    destinations: $("#w_kind").value === "route" ? $("#w_destinations").value.toUpperCase().replace(/\s/g, "") : $("#w_destinations").value.trim(),
+    destinations: $("#w_kind").value !== "radar" ? $("#w_destinations").value.toUpperCase().replace(/\s/g, "") : $("#w_destinations").value.trim(),
     max_price: Number($("#w_max_price").value), adults: Number($("#w_adults").value || 1),
     date_from: $("#w_date_from").value || null, date_to: $("#w_date_to").value || null,
     nights_min: Number($("#w_nights_min").value || 0), nights_max: Number($("#w_nights_max").value || 0),
@@ -524,6 +595,7 @@ $("#watch_form").addEventListener("submit", async (ev) => {
 $("#w_cancel").addEventListener("click", () => ($("#watch_form").hidden = true));
 $("#new_route").addEventListener("click", () => openWatchForm("route"));
 $("#new_radar").addEventListener("click", () => openWatchForm("radar"));
+$("#new_award").addEventListener("click", () => openWatchForm("award"));
 $("#test_push").addEventListener("click", async (ev) => {
   try { await api("POST", "/api/notify/test"); ev.target.textContent = "Push gesendet ✓"; } catch (e) { alert(e.message); }
 });
@@ -543,6 +615,7 @@ $("#watches").addEventListener("click", async (ev) => {
 
 // ================================================================== Community
 let COMMUNITY = null;
+const bonusKnown = (b) => (PROFILE_BONUSES || []).some((x) => x.program === b.program && x.bonus_pct === b.bonus_pct);
 
 async function loadCommunity() {
   try { COMMUNITY = await api("GET", "/api/community"); } catch (e) { $("#digests").textContent = e.message; return; }
@@ -558,6 +631,8 @@ async function loadCommunity() {
       ${errs ? `<p class="fine">Feed-Probleme: ${esc(errs)}</p>` : ""}
       ${ct ? `<p>${esc(ct.summary)}</p>
         ${ct.deals.length ? `<h4>Deals</h4><ul>${ct.deals.map((x) => `<li><a href="${esc(x.link)}" target="_blank" rel="noopener">${esc(x.title)}</a> · ${esc(x.route)} · <strong>${esc(x.price)}</strong>${x.why_relevant ? `<br><span class="fine">${esc(x.why_relevant)}</span>` : ""}</li>`).join("")}</ul>` : ""}
+        ${ct.transfer_bonuses?.length ? `<h4>Transfer-Boni</h4><ul>${ct.transfer_bonuses.map((b, bi) => `<li><strong>${esc(CONFIG.programs[b.program] || b.program)} +${b.bonus_pct} %</strong>${b.valid_until ? ` bis ${esc(b.valid_until)}` : ""} ${esc(b.note)} <a href="${esc(b.link)}" target="_blank" rel="noopener">Quelle</a>
+            ${bonusKnown(b) ? ' <span class="chip">übernommen</span>' : ` <button type="button" class="copy" data-bonus="${di}:${bi}">Übernehmen</button>`}</li>`).join("")}</ul>` : ""}
         ${ct.tips.length ? `<h4>Tipps</h4><ul>${ct.tips.map((t, ti) => `<li><strong>${esc(t.title)}</strong> <span class="src">${esc(t.category)}</span><br>${esc(t.detail)} <a href="${esc(t.link)}" target="_blank" rel="noopener">Quelle</a>
             ${known.has(t.title) ? ' <span class="chip">übernommen</span>' : ` <button type="button" class="copy" data-adopt="${di}:${ti}">Übernehmen</button>`}</li>`).join("")}</ul>` : ""}` : ""}
     </div>`;
@@ -572,7 +647,12 @@ const feedRow = (f) => `<tr><td><input type="checkbox" class="f_active" ${f.acti
 
 $("#tab-community").addEventListener("click", async (ev) => {
   const t = ev.target;
-  if (t.dataset.adopt) {
+  if (t.dataset.bonus) {
+    const [di, bi] = t.dataset.bonus.split(":").map(Number);
+    const b = COMMUNITY.digests[di].content.transfer_bonuses[bi];
+    try { await api("POST", "/api/profile/bonuses", b); await loadProfile(); } catch (e) { alert(e.message); }
+    loadCommunity();
+  } else if (t.dataset.adopt) {
     const [di, ti] = t.dataset.adopt.split(":").map(Number);
     const tip = COMMUNITY.digests[di].content.tips[ti];
     await api("POST", "/api/community/tips", { title: tip.title, detail: tip.detail, category: tip.category, link: tip.link });

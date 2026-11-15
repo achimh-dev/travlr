@@ -29,15 +29,18 @@ Ein Claude-Agent plant mehrere Suchen über Google Flights, Duffel und Prämienf
 | **Umkreis-Start** | Wohnort eintragen: Die Fahrzeit schlägt die Flughäfen vor (z. B. ab Köln bis 2 h: CGN, DUS, DTM, Weeze, Maastricht, Eindhoven …), einzelne weiter entfernte wie Frankfurt oder Amsterdam hakst du zusätzlich an. Suche und Alarme nutzen genau diese Liste, inkl. grober Anreisekosten |
 | **Preisalarme** | Strecke + Zeitfenster + Reisedauer + Schwelle („New York unter 300 €“). Wird regelmäßig zu wechselnden Daten geprüft, mit Preisverlauf und Googles Preisniveau (niedrig/typisch/hoch) |
 | **Deal-Radar** | „Wohin komme ich ab meinem Umkreis unter X €?“ über Google Travel Explore, optional nur bestimmte Länder (z. B. USA, Japan) |
+| **Prämien-Alarme** | Push, sobald auf einer Strecke ein Prämienplatz unter deiner Meilen-Schwelle frei wird (seats.aero), mit Hinweis, ob deine Meilen inkl. Amex-Transfer reichen |
+| **Preisverlauf** | Jede echte Suche und Alarm-Prüfung wird gespeichert. Neue Preise werden dagegen eingeordnet („günstiger als 80 % von 23 Beobachtungen“) |
 | **Push** | Alarme und Wochen-Digest per [ntfy](https://ntfy.sh) aufs Handy, ein Tipp öffnet den Flug |
 | **Community-Digest** | Einmal pro Woche: Deal-Seiten und Vielflieger-Foren (RSS) auswerten; passende Deals und neue Tricks. Übernommene Tipps kennt der Such-Agent dann als Hintergrundwissen |
 | **Anreise & Parken** | Jeder Flug zeigt im Kleingedruckten die Anreise ab Heimatflughafen: Taxi (z. B. zum nächsten Flughafen) oder Auto + Parkhaus für die Reisedauer (Schätzwerte für vorab gebuchtes Parken, je Flughafen überschreibbar). Empfehlungen und Alarme vergleichen über den **Gesamtpreis** |
-| **Meilen** | Kontostände (Amex MR, Miles & More, BA Club …), Amex-Transferkurse, Prämienflüge (seats.aero) mit Gegenwert in Cent pro Meile |
-| **Faktoren** | Priorität Preis/Komfort, Gepäck, Umstiege, Reisezeit, Umstiegszeiten, Airlines ausschließen, getrennte Tickets, Positionierung, andere Märkte |
+| **Meilen** | Kontostände (Amex MR, Miles & More, BA Club …), alle deutschen Amex-Transferpartner mit Kursen und Mindestmengen, Transfer-Boni (auch aus dem Digest übernehmbar), Sweet Spots und Fallen je Programm, Prämienflüge (seats.aero) mit Gegenwert in Cent pro Meile |
+| **Guthaben** | Reiseguthaben und Gutscheine im Profil; der Agent rechnet sie nur an, wenn die Buchung auf dem genannten Weg geht |
+| **Faktoren** | Priorität Preis/Komfort, Gepäck (Aufgabegepäck bei Low-Cost-Airlines wird geschätzt und eingerechnet), Umstiege, Reisezeit, Umstiegszeiten, Airlines ausschließen, getrennte Tickets, Positionierung, andere Märkte |
 
 ## Spar-Strategien des Agenten
 
-Flexible Daten, alle Flughäfen im Umkreis, Positionierung (Langstrecke ab AMS/BRU/CPH … plus Zubringer), zwei One-Ways statt Hin/Rück, Gabelflüge, anderer Markt (als Experiment, inkl. Auslandsentgelt der Karte), Gesamtkosten statt Lockpreis, Meilen bei hohen Barpreisen.
+Günstigste Daten eines Monats (Travel Explore) bei offenem Zeitraum, flexible Daten, alle Flughäfen im Umkreis, Positionierung (Langstrecke ab AMS/BRU/CPH … plus Zubringer), zwei One-Ways statt Hin/Rück, Gabelflüge mit einem Ticket (hin nach A, zurück ab B oder zu einem anderen Heimatflughafen), anderer Markt (als Experiment, inkl. Auslandsentgelt der Karte), Gesamtkosten statt Lockpreis, Meilen bei hohen Barpreisen.
 
 ### Mythen-Check
 
@@ -53,14 +56,14 @@ Flexible Daten, alle Flughäfen im Umkreis, Positionierung (Langstrecke ab AMS/B
 
 | Quelle | Wofür | In der App |
 |---|---|---|
-| **Google Flights** + **Travel Explore** via [SerpApi](https://serpapi.com/) | Suche, Preis-Insights, Alarme, Deal-Radar | `SERPAPI_API_KEY` |
+| **Google Flights** + **Travel Explore** via [SerpApi](https://serpapi.com/) | Suche inkl. Gabelflüge, Preis-Insights, günstigste Daten, Alarme, Deal-Radar | `SERPAPI_API_KEY` |
 | **[Duffel](https://duffel.com/)** | direkt buchbare Airline-Tarife inkl. Gepäck (Suche kostenlos) | `DUFFEL_API_KEY` |
-| **[seats.aero](https://seats.aero/)** | Prämienflug-Verfügbarkeit (Pro-Abo) | `SEATS_AERO_API_KEY` |
+| **[seats.aero](https://seats.aero/)** | Prämienflug-Verfügbarkeit in der Suche und für Prämien-Alarme (Pro-Abo) | `SEATS_AERO_API_KEY` |
 | RSS-Feeds (Travel-Dealz, reisetopia, Reddit …) | Community-Digest | im Tab „Community“ |
 
 Für Privatpersonen nicht zugänglich: Skyscanner-API, Kiwi Tequila, Amadeus Self-Service (seit Juli 2026 eingestellt) und die GDS-Systeme der Reisebüros. Dafür gibt es die Reisebüro-Anfrage zum Kopieren.
 
-**Meilen-Hinweis:** In Deutschland ist Miles & More kein direkter Amex-Transferpartner (nur über Payback 3:1). Avios (BA, Iberia), Flying Blue und SAS gehen 5:4. Die Kurse stehen in [`app/loyalty.py`](app/loyalty.py); vor jedem Transfer in der Amex-App prüfen.
+**Meilen-Hinweis:** In Deutschland ist Miles & More kein direkter Amex-Transferpartner (nur über Payback 3:1). Avios (BA, Iberia), Flying Blue und SAS gehen 5:4; Qatar, KrisFlyer, Asia Miles und Delta 3:2, Emirates 2:1. Avios lassen sich kostenlos zwischen BA, Iberia und Qatar verschieben. Kurse, Sweet Spots und Quellen stehen in [`app/loyalty.py`](app/loyalty.py) (Stand November 2026); vor jedem Transfer in der Amex-App prüfen.
 
 **Community-Feeds:** TRAVLR liest nur öffentliche RSS-Feeds, einmal pro Woche, und meldet sich als privater Feed-Reader. Kein Scraping von Seiten hinter Logins. Ob ein vorgeschlagener Feed (noch) funktioniert, zeigt der erste Lauf; Feeds lassen sich in der App bearbeiten. Feed-Inhalte gelten als ungeprüfte Daten: Claude fasst sie nur zusammen, und ins Agenten-Wissen kommt nur, was du selbst übernimmst.
 
@@ -115,15 +118,17 @@ Ohne SerpApi- und Duffel-Key läuft TRAVLR im **Demo-Modus** mit erfundenen Date
 
 ```
 app/
-  agent.py        Such-Agent (Claude + Tools search_flights / search_award_space / recommend_options)
-  watches.py      Preisalarme, Deal-Radar (Travel Explore), Alarmregeln
+  agent.py        Such-Agent (Claude + Tools search_flights / find_cheapest_dates / search_award_space / recommend_options)
+  watches.py      Preisalarme, Deal-Radar, Prämien-Alarme, günstigste Daten (Travel Explore), Alarmregeln
+  history.py      eigener Preisverlauf und Einordnung
+  baggage.py      Schätzung Aufgabegepäck bei Low-Cost-Airlines
   scheduler.py    Hintergrund-Jobs: Alarme prüfen, Wochen-Digest
   community.py    RSS lesen, Digest mit Claude, freigegebene Tipps
   geo.py          Flughäfen im Umkreis, Fahrzeit-Schätzung, Geokodierung
   auth.py         Login-Cookie, Cloudflare-Access-Prüfung
   notify.py       ntfy-Push
   filters.py      harte Präferenzen
-  loyalty.py      Meilenprogramme, Amex-Transferkurse
+  loyalty.py      Meilenprogramme, Amex-Transferkurse, Sweet Spots, Transfer-Boni
   providers/      SerpApi, Duffel, seats.aero, Demo
   static/         Oberfläche (HTML/CSS/JS, PWA-Icons, kein Build-Schritt)
 scripts/          Icon-Set erzeugen (SVG → PNG)
@@ -133,6 +138,8 @@ tests/            pytest
 ## Stand
 
 - SerpApi (Flights + Travel Explore), Duffel und seats.aero sind nach der öffentlichen Doku angebunden und gegen nachgebaute Antworten getestet, noch nicht mit echten Keys. Die ersten echten Läufe kurz prüfen.
+- Gabelflüge (Multi-City) und „günstigste Daten“ (Travel Explore mit festem Ziel) sind nach der SerpApi-Doku gebaut; besonders die Antwort von Travel Explore mit `arrival_id` beim ersten echten Lauf prüfen.
+- Gepäckpreise in [`app/baggage.py`](app/baggage.py) und Sweet Spots in [`app/loyalty.py`](app/loyalty.py) sind Richtwerte mit Stand November 2026.
 - Fahrzeiten sind Schätzungen (Luftlinie × 1,25 / 105 km/h + 15 min).
 - Parkpreise sind Schätzungen für vorab online gebuchtes Parken (große Flughäfen einzeln, Regionalflughäfen pauschal; Stützstellen 1/3/7/14 Tage, dazwischen interpoliert) in [`app/ground.py`](app/ground.py). Vor Ort an der Schranke ist es oft ein Vielfaches (Frankfurt: bis 258 €/Woche). Eigene Preise im Profil eintragen. Taxi-Schätzung: 4 € + 2,60 €/km pro Fahrt; der nächste Flughafen (≤ 30 min) ist standardmäßig Taxi.
 
