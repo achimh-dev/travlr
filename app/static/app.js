@@ -106,10 +106,13 @@ const DEFAULT_PROGRAMS = ["amex_mr", "miles_and_more", "ba_club"];
 let ACCOUNTS = {};
 let VISIBLE = [...DEFAULT_PROGRAMS];
 
+// Punkte mit Tausenderpunkt anzeigen ("187.450"), beim Lesen alle Nicht-Ziffern entfernen
+const parseNum = (v) => Number(String(v).replace(/\D/g, "") || 0);
+
 function readAccountRows() {
   document.querySelectorAll("#accounts tr").forEach((tr) => {
-    ACCOUNTS[tr.dataset.program] = { program: tr.dataset.program, balance: Number(tr.querySelector(".bal").value || 0),
-      status: tr.querySelector(".status").value.trim() };
+    const k = tr.dataset.program;
+    ACCOUNTS[k] = { ...(ACCOUNTS[k] || {}), program: k, balance: parseNum(tr.querySelector(".bal").value) };
   });
 }
 
@@ -117,13 +120,15 @@ function renderAccounts(highlight = []) {
   $("#accounts").innerHTML = Object.entries(CONFIG.programs).filter(([key]) => VISIBLE.includes(key)).map(([key, name]) => `
     <tr data-program="${esc(key)}" class="${highlight.includes(key) ? "picked" : ""}">
       <td>${esc(name)}</td>
-      <td><input type="number" min="0" step="1" class="bal" value="${ACCOUNTS[key]?.balance ?? 0}"></td>
-      <td><input class="status" value="${esc(ACCOUNTS[key]?.status ?? "")}" placeholder="–"></td>
+      <td><input type="text" inputmode="numeric" class="bal" value="${fmtNum(ACCOUNTS[key]?.balance ?? 0)}"></td>
     </tr>`).join("");
   $("#more_programs").innerHTML = Object.entries(CONFIG.programs).map(([key, name]) =>
     `<label><input type="checkbox" class="prog_toggle" value="${esc(key)}" ${VISIBLE.includes(key) ? "checked" : ""}> ${esc(name)}</label>`).join("");
 }
 
+document.addEventListener("focusout", (ev) => {
+  if (ev.target.classList?.contains("bal")) ev.target.value = fmtNum(parseNum(ev.target.value));
+});
 document.addEventListener("change", (ev) => {
   if (!ev.target.classList.contains("prog_toggle")) return;
   readAccountRows();
@@ -148,7 +153,7 @@ document.addEventListener("change", async (ev) => {
   const file = ev.target.files[0];
   ev.target.value = "";
   const msg = $("#shot_msg"), btn = $("#shot_btn");
-  btn.disabled = true; msg.textContent = "Werte Screenshot aus …";
+  btn.disabled = true; msg.hidden = false; msg.textContent = "Werte Screenshot aus …";
   try {
     let blob = file;
     try { blob = await shrinkImage(file); } catch { /* z. B. HEIC ohne Decoder: Original schicken */ }
@@ -159,7 +164,7 @@ document.addEventListener("change", async (ev) => {
     if (!r.ok) throw new Error(data.detail || `Fehler ${r.status}`);
     readAccountRows();
     const found = data.accounts || [];
-    for (const a of found) ACCOUNTS[a.program] = { program: a.program, balance: a.balance, status: a.status || ACCOUNTS[a.program]?.status || "" };
+    for (const a of found) ACCOUNTS[a.program] = { ...(ACCOUNTS[a.program] || {}), program: a.program, balance: a.balance };
     VISIBLE = [...new Set([...VISIBLE, ...found.map((a) => a.program)])];
     renderAccounts(found.map((a) => a.program));
     const notes = found.map((a) => a.note).filter(Boolean).concat(data.note ? [data.note] : []);
@@ -188,7 +193,8 @@ document.addEventListener("click", (ev) => {
 
 async function saveProfile() {
   readAccountRows();
-  const accounts = Object.values(ACCOUNTS).filter((a) => VISIBLE.includes(a.program) && (a.balance > 0 || a.status || DEFAULT_PROGRAMS.includes(a.program)));
+  const accounts = Object.values(ACCOUNTS).filter((a) => VISIBLE.includes(a.program) && (a.balance > 0 || DEFAULT_PROGRAMS.includes(a.program)))
+    .map((a) => ({ program: a.program, balance: a.balance, status: a.status || "" }));
   const body = {
     home_airports: $("#home_airports").value.toUpperCase().replace(/\s/g, "") || "FRA",
     home_location: $("#home_location").value.trim(),

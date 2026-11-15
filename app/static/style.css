@@ -201,3 +201,12 @@ button.mic.listening { background: var(--btn); color: var(--btn-text); animation
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--btn) 45%, transparent); }
   50% { box-shadow: 0 0 0 8px transparent; } }
 @media (prefers-reduced-motion: reduce) { button.mic.listening { animation: none; } }
+
+/* kleine Aktion neben einer Überschrift */
+h3.with-action { display: flex; align-items: center; gap: 10px; }
+button.icon-btn {
+  flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; font-size: 13px;
+  font-weight: 500; background: var(--chip); color: var(--muted); border-radius: 99px;
+}
+button.icon-btn:hover { color: var(--text); }
+input.bal { text-align: right; font-variant-numeric: tabular-nums; }
