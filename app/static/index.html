@@ -2,13 +2,14 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>TRAVLR</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TRAVLR">
   <meta name="theme-color" content="#151515">
   <link rel="stylesheet" href="/static/style.css">
@@ -172,11 +173,11 @@
         <h2>Mein Profil</h2>
         <div class="grid">
           <div class="field"><label for="home_location">Wohnort (Umkreis-Start)</label><input id="home_location" placeholder="z. B. Köln"></div>
-          <div class="field"><label for="home_airports">Heimatflughafen(s) ohne Wohnort</label><input id="home_airports" placeholder="FRA"></div>
-          <div class="field"><label for="car_cost_per_km">Fahrtkosten Auto (€/km)</label><input id="car_cost_per_km" type="number" min="0" max="2" step="0.05"></div>
+          <div class="field"><label for="home_airports">Heimatflughafen</label><input id="home_airports" placeholder="FRA"></div>
+          <div class="field"><label for="car_cost_per_km">Auto (€/km)</label><input id="car_cost_per_km" type="number" min="0" max="2" step="0.05"></div>
           <div class="field"><label for="card">Zahlungskarte</label><input id="card"></div>
           <div class="field"><label for="card_fx_fee_pct">Auslandsentgelt (%)</label><input id="card_fx_fee_pct" type="number" min="0" max="5" step="0.1"></div>
-          <div class="field"><label for="min_value">Meilen lohnen ab (ct/Meile)</label><input id="min_value" type="number" min="0" max="10" step="0.1"></div>
+          <div class="field"><label for="min_value">Meilen ab (ct/Meile)</label><input id="min_value" type="number" min="0" max="10" step="0.1"></div>
         </div>
         <h3>Flughäfen im Umkreis</h3>
         <div class="grid"><div class="field"><label for="max_drive_h">Vorauswahl bis (h Fahrt)</label><input id="max_drive_h" type="number" min="0" max="4" step="0.25"></div></div>
@@ -202,7 +203,7 @@
         </details>
         <h3>Transfer-Boni</h3>
         <p class="fine">Laufende Aktionen (z. B. +30 % auf Flying Blue). Kommen auch aus dem Community-Digest; abgelaufene werden ignoriert.</p>
-        <table class="accounts"><thead><tr><th>Programm</th><th>Bonus %</th><th>gültig bis</th><th></th></tr></thead><tbody id="bonuses"></tbody></table>
+        <div class="table-wrap"><table class="accounts"><thead><tr><th>Programm</th><th>Bonus %</th><th>gültig bis</th><th></th></tr></thead><tbody id="bonuses"></tbody></table></div>
         <div class="row"><button type="button" id="add_bonus" class="secondary">+ Bonus</button></div>
         <h3>Guthaben &amp; Gutscheine</h3>
         <p class="fine">Reiseguthaben deiner Karte oder Airline-Gutscheine. Der Agent rechnet sie nur an, wenn die Buchung auf dem genannten Weg geht.</p>

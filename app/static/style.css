@@ -210,3 +210,11 @@ button.icon-btn {
 }
 button.icon-btn:hover { color: var(--text); }
 input.bal { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Homescreen-App (iOS): Inhalt reicht unter die Statusleiste; dort ein fester dunkler Streifen statt Milchglas */
+.top { border-top: env(safe-area-inset-top, 0px) solid #151515; }
+.login-body { border-top: env(safe-area-inset-top, 0px) solid #151515; min-height: 100dvh; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+
+/* Felder im Raster auf einer Linie, auch wenn eine Beschriftung umbricht */
+.grid > .field { display: flex; flex-direction: column; justify-content: flex-end; }
